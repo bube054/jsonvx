@@ -153,32 +153,26 @@ func (l *Lexer) Token() Token {
 		l.readChar()
 
 		for {
-			next := l.peek()
-			prev := l.prev()
-			prevBy2 := l.prevBy(2)
-
 			if l.char == 0 {
 				return newToken(ILLEGAL, INVALID_STRING, l.input[pos:], l.line, col, nil)
 			}
 
-			// Case 1: Quote is not escaped (e.g., "\"" or '\'')
-			notEscaped := l.char == char && prev != '\\'
-
-			// Case 2: Quote is escaped but backslash itself is escaped (e.g., "\\\"" or '\\\”)
-			escapedEscape := l.char == char && prev == '\\' && prevBy2 == '\\'
-
-			if notEscaped || escapedEscape {
+			// An unescaped closing quote ends the string. Escaped quotes never reach
+			// this check, because escape sequences are consumed whole below.
+			if l.char == char {
 				if char == '\'' {
 					return newToken(STRING, SINGLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
 				}
 
-				if char == '"' {
-					return newToken(STRING, DOUBLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
-				}
+				return newToken(STRING, DOUBLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
 			}
 
-			// Handle escape sequences
-			if l.char == '\\' && prev != '\\' {
+			// Handle escape sequences: validate the character after the backslash,
+			// then consume the backslash so that character is skipped as a unit.
+			// This keeps runs like \\\" correct (escaped backslash, escaped quote).
+			if l.char == '\\' {
+				next := l.peek()
+
 				switch next {
 				case char: // escaped quote
 				case '\\': // escaped backslash
@@ -208,6 +202,8 @@ func (l *Lexer) Token() Token {
 						return newToken(ILLEGAL, INVALID_ESCAPED_STRING, l.input[pos:], l.line, col, nil)
 					}
 				}
+
+				l.readChar() // consume the backslash; the escaped character is consumed below
 			}
 
 			l.readChar()

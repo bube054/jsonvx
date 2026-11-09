@@ -229,9 +229,11 @@ func (p *Parser) parseObject() (JSON, error) {
 			return nil, WrapJSONSyntaxError(*valueString.Token)
 		}
 
+		// Keys are decoded up front so that sorting, QueryPath and ForEach all see
+		// the real key (e.g. "caf\u00e9" is stored as "café").
 		keySlice := key
 		if keyString.Token.SubKind != IDENT {
-			keySlice = key[1 : len(key)-1]
+			keySlice = []byte(unescapeString(stringContent(key)))
 		}
 
 		properties = append(properties, KeyValue{key: keySlice, value: value})

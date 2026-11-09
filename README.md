@@ -304,7 +304,11 @@ arrNode.ForEach(func(item jsonvx.JSON, index int, array *jsonvx.Array) {
 ### String
 
 - JSON string values are parsed as `jsonvx.String`.
-- `Value()` returns the raw Go` string value.
+- `Value()` returns the decoded Go `string` value: escape sequences such as `\n`, `\"`, `\u00e9` and emoji pairs like `\ud83d\ude00` become the characters they stand for. With `JSON5` options enabled, `\'`, `\v`, `\0`, `\xHH` and line continuations (a backslash at the end of a line) are decoded too.
+- `Raw()` returns the string exactly as written in the input, without the surrounding quotes and without decoding escapes.
+- Object keys are decoded the same way, so `{"caf\u00e9": 1}` is queried with `QueryPath("café")`.
+
+> **Changed in v1.1.0:** before v1.1.0, `Value()` returned the string with escape sequences left undecoded (`"a\nb"` gave a backslash and an `n`). If you relied on that, use `Raw()`.
 
 This example demonstrates how to parse a `JSON` `string` using `jsonvx`, cast it to an `jsonvx.String` node, and get its `string` value using the built-in `Value` method.
 
@@ -330,6 +334,18 @@ if err != nil {
 }
 
 fmt.Println(strValue) // Output: Hello, World!
+```
+
+Escape sequences are decoded by `Value()`, while `Raw()` keeps them as written:
+
+```go
+parser := jsonvx.NewParser([]byte(`"caf\u00e9\nsay \"hi\""`), nil)
+node, _ := parser.Parse()
+strNode, _ := jsonvx.AsString(node)
+
+value, _ := strNode.Value() // café
+                            // say "hi"
+raw, _ := strNode.Raw()     // caf\u00e9\nsay \"hi\"
 ```
 
 ### Number

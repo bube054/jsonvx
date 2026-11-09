@@ -194,7 +194,9 @@ func (s *String) String() string {
 	return (s.Token.Value()).(string)
 }
 
-// Value returns the string or an error if invalid.
+// Value returns the decoded string, with escape sequences such as \n, \" and \u00e9
+// turned into the characters they stand for, or an error if invalid.
+// Use Raw to get the string exactly as written in the input.
 func (s *String) Value() (string, error) {
 	if s.Token == nil {
 		return "", ErrNotString
@@ -213,6 +215,21 @@ func (s *String) Value() (string, error) {
 	}
 
 	return strVal, nil
+}
+
+// Raw returns the string exactly as written in the input, without the surrounding
+// quotes and without decoding escape sequences, so "caf\u00e9" stays `caf\u00e9`.
+// Before v1.1.0, Value returned this raw form.
+func (s *String) Raw() (string, error) {
+	if s.Token == nil || s.Token.Kind != STRING {
+		return "", ErrNotString
+	}
+
+	if s.Token.SubKind == IDENT {
+		return string(s.Token.Literal), nil
+	}
+
+	return string(stringContent(s.Token.Literal)), nil
 }
 
 func (s *String) Equal(s2 JSON) bool {

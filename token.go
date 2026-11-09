@@ -205,7 +205,7 @@ func (t *Token) Value() any {
 	case STRING:
 		switch t.SubKind {
 		case SINGLE_QUOTED, DOUBLE_QUOTED:
-			return quoteValue(t.Literal)
+			return unescapeString(stringContent(t.Literal))
 		case IDENT:
 			return string(t.Literal)
 		default:

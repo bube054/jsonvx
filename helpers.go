@@ -262,7 +262,9 @@ func isHex(input []byte) bool {
 	return true
 }
 
-func quoteValue(input []byte) string {
+// stringContent returns the text between the quotes of a quoted string literal,
+// exactly as written (escape sequences are not decoded).
+func stringContent(input []byte) []byte {
 	double := []byte(`"`)
 	single := []byte(`'`)
 
@@ -275,7 +277,7 @@ func quoteValue(input []byte) string {
 	after, _ := bytes.CutPrefix(input, end)
 	before, _ := bytes.CutSuffix(after, end)
 
-	return string(before)
+	return before
 }
 
 // func intValue(input []byte) int64 {
