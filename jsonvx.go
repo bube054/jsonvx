@@ -53,12 +53,16 @@ var (
 	ErrNotNull    = errors.New("value is not null")
 
 	ErrInvalidQueryKey   = errors.New("invalid query key")
+	ErrKeyNotFound       = errors.New("key not found")
 	ErrExpectedIndex     = errors.New("invalid query key, expected integer index")
 	ErrIndexOutOfRange   = errors.New("index out of range")
 	ErrEmptyArray        = errors.New("array is empty")
 	ErrInvalidJSONType   = errors.New("invalid JSON type")
 	ErrQueryExceedsDepth = errors.New("query exceeds depth for scalar value")
 )
+
+// nilString is what String returns for a nil or empty node, matching how fmt prints nil pointers.
+const nilString = "<nil>"
 
 // JSON is a common interface implemented by all JSON types (Null, Boolean, etc.).
 type JSON interface {
@@ -86,7 +90,7 @@ func (n *Null) String() string {
 
 // Value returns nil if the token is valid, or an error otherwise.
 func (n *Null) Value() (any, error) {
-	if n.Token == nil {
+	if n == nil || n.Token == nil {
 		return nil, ErrNotNull
 	}
 
@@ -128,6 +132,10 @@ func newBoolean(Token *Token, cb func()) *Boolean {
 }
 
 func (b *Boolean) String() string {
+	if b == nil || b.Token == nil {
+		return nilString
+	}
+
 	if b.Token.SubKind == TRUE {
 		return "\033[1mtrue\033[0m"
 	} else {
@@ -137,7 +145,7 @@ func (b *Boolean) String() string {
 
 // Value returns the boolean value or an error if the token is invalid.
 func (b *Boolean) Value() (bool, error) {
-	if b.Token == nil {
+	if b == nil || b.Token == nil {
 		return false, ErrNotBoolean
 	}
 
@@ -191,14 +199,19 @@ func newString(Token *Token, cb func()) *String {
 }
 
 func (s *String) String() string {
-	return (s.Token.Value()).(string)
+	value, err := s.Value()
+	if err != nil {
+		return nilString
+	}
+
+	return value
 }
 
 // Value returns the decoded string, with escape sequences such as \n, \" and \u00e9
 // turned into the characters they stand for, or an error if invalid.
 // Use Raw to get the string exactly as written in the input.
 func (s *String) Value() (string, error) {
-	if s.Token == nil {
+	if s == nil || s.Token == nil {
 		return "", ErrNotString
 	}
 
@@ -221,7 +234,7 @@ func (s *String) Value() (string, error) {
 // quotes and without decoding escape sequences, so "caf\u00e9" stays `caf\u00e9`.
 // Before v1.1.0, Value returned this raw form.
 func (s *String) Raw() (string, error) {
-	if s.Token == nil || s.Token.Kind != STRING {
+	if s == nil || s.Token == nil || s.Token.Kind != STRING {
 		return "", ErrNotString
 	}
 
@@ -267,12 +280,16 @@ func newNumber(Token *Token, cb func()) *Number {
 }
 
 func (n *Number) String() string {
-	return string((n.Token.Literal))
+	if n == nil || n.Token == nil {
+		return nilString
+	}
+
+	return string(n.Token.Literal)
 }
 
 // Value attempts to parse the number as float64, depending on its subtype.
 func (n *Number) Value() (float64, error) {
-	if n.Token == nil {
+	if n == nil || n.Token == nil {
 		return 0, ErrNotNumber
 	}
 
@@ -346,6 +363,10 @@ func newArray(items []JSON, cb func()) *Array {
 }
 
 func (a *Array) String() string {
+	if a == nil {
+		return nilString
+	}
+
 	var builder strings.Builder
 	builder.WriteString("[")
 	for i, item := range a.Items {
@@ -523,6 +544,10 @@ func (o *Object) Keys() []string {
 }
 
 func (o *Object) String() string {
+	if o == nil {
+		return nilString
+	}
+
 	var builder strings.Builder
 	builder.WriteString("{")
 	length := len(o.Properties)
@@ -551,7 +576,7 @@ func (o *Object) QueryPath(paths ...string) (JSON, error) {
 
 	index := o.lookup([]byte(keyStr))
 	if index < 0 {
-		return nil, fmt.Errorf("key not found: %q", keyStr)
+		return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, keyStr)
 	}
 
 	item := o.Properties[index]

@@ -17,7 +17,6 @@ func runLexerTests(t *testing.T, tests []LexerTest) {
 			lexer := NewLexer(test.input, test.cfg)
 			got := lexer.Tokens()
 
-			// if !reflect.DeepEqual(got, test.expected) {
 			if got == nil || test.expected == nil {
 				if got != nil || test.expected != nil {
 					t.Errorf("got %v, expected %v", got, test.expected)

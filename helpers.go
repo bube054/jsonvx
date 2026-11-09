@@ -94,37 +94,6 @@ func isHexLetter(b byte) bool {
 	return (b >= 65 && b <= 70) || (b >= 97 && b <= 102)
 }
 
-// func isNumber(b, b2 byte) bool {
-// 	// if b2 != 0 && b == 'N' && b2 == 'a' {
-// 	// 	return true
-// 	// }
-
-// 	// if b2 != 0 && b == 'I' && b2 == 'n' {
-// 	// 	return true
-// 	// }
-// 	if b2 != 0 {
-// 		return (b == '+') ||
-// 			(b == '-') ||
-// 			(b == 'N' && b2 == 'a') ||
-// 			(b == 'I' && b2 == 'n') ||
-// 			(b == '0' && b2 == 'X') ||
-// 			(b == '0' && b2 == 'x') ||
-// 			isDigit(b) ||
-// 			isHexLetter(b)
-// 	} else {
-// 		return isDigit(b) ||
-// 			isHexLetter(b) ||
-// 			isPlus(b) ||
-// 			isMinus(b) ||
-// 			isDot(b) ||
-// 			isExponent(b) ||
-// 			b == 'N' || b == 'a' ||
-// 			b == 'I' || b == 'n' || b == 'f' || b == 'i' || b == 't' || b == 'y' ||
-// 			b == 'X' || b == 'x'
-
-// 	}
-// }
-
 func isPossibleNumber(b byte) bool {
 	return b == '+' ||
 		b == '-' ||

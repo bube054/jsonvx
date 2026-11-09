@@ -213,10 +213,10 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowLineComments(true))
   parser := jsonvx.NewParser([]byte(`// comment
-  123`), cfg) // valid number after liner comment
+  123`), cfg) // valid number after line comment
   ```
   ### `AllowBlockComments`:
-  Enables the use of block comments (/_ ... _/).
+  Enables the use of block comments (`/* ... */`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowBlockComments(true))
   parser := jsonvx.NewParser([]byte(`/* comment */ 123`), cfg)
@@ -264,7 +264,7 @@ Below are examples of how to `parse`, `traverse` and `retrieve` values from the 
 >
 > **Changed in v1.1.0:** before v1.1.0, keys were sorted alphabetically, so `ForEach` and `String()` did not follow the input. They now keep the input order.
 
-This example shows how to parse a `JSON` object using `jsonvx`, cast it to an `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
+This example shows how to parse a `JSON` object using `jsonvx`, cast it to a `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
 
 ```go
 parser := jsonvx.NewParser([]byte(`{"name": "Alice", "age": 30}`), jsonvx.NewParserConfig())
@@ -296,7 +296,7 @@ fmt.Println(objNode.Keys()) // [name age]
 - Items are stored as a `slice` of `jsonvx.JSON`
 - Each item is accessible using the `ForEach` method.
 
-This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to an `jsonvx.Array` node, and iterate over its elements using the built-in `ForEach` method.
+This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to a `jsonvx.Array` node, and iterate over its elements using the built-in `ForEach` method.
 
 ```go
 parser := jsonvx.NewParser([]byte(`[1, 2, 3]`), jsonvx.NewParserConfig())
@@ -328,7 +328,7 @@ arrNode.ForEach(func(item jsonvx.JSON, index int, array *jsonvx.Array) {
 
 > **Changed in v1.1.0:** before v1.1.0, `Value()` returned the string with escape sequences left undecoded (`"a\nb"` gave a backslash and an `n`). If you relied on that, use `Raw()`.
 
-This example demonstrates how to parse a `JSON` `string` using `jsonvx`, cast it to an `jsonvx.String` node, and get its `string` value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `string` using `jsonvx`, cast it to a `jsonvx.String` node, and get its `string` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte(`"Hello, World!"`), jsonvx.NewParserConfig())
@@ -372,7 +372,7 @@ raw, _ := strNode.Raw()     // caf\u00e9\nsay \"hi\"
 - `Value()` returns the raw Go `float64` value.
 - `Integer`, `Float`, `SciNot`, `Hex`, `Infinity` and ironically `NaN` number types are supported.
 
-This example demonstrates how to parse a `JSON` `number` using `jsonvx`, cast it to an `jsonvx.Number` node, and get `float64` its value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `number` using `jsonvx`, cast it to a `jsonvx.Number` node, and get its `float64` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte("123456"), jsonvx.NewParserConfig())
@@ -403,7 +403,7 @@ fmt.Println(numValue) // Output: 123456
 - JSON booleans are parsed as a `jsonvx.Boolean`.
 - `Value()` returns the raw Go `bool` value.
 
-This example demonstrates how to parse a `JSON` `boolean` using `jsonvx`, cast it to an `jsonvx.Boolean` node, and get `bool` its value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `boolean` using `jsonvx`, cast it to a `jsonvx.Boolean` node, and get its `bool` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte("true"), jsonvx.NewParserConfig())
@@ -434,7 +434,7 @@ fmt.Println(trueValue) // Output: true
 - JSON `null` values are parsed as a `jsonvx.Null`.
 - `Value()` returns the raw Go `nil` value.
 
-This example demonstrates how to parse a `JSON` `null` using `jsonvx`, cast it to an `jsonvx.Null` node, and get `nil` its value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `null` using `jsonvx`, cast it to a `jsonvx.Null` node, and get its `nil` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte("null"), jsonvx.NewParserConfig())
