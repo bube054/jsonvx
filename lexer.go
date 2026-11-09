@@ -368,9 +368,18 @@ func (l *Lexer) Token() Token {
 	}
 }
 
+// estimatedTokenCount guesses how many tokens an input of n bytes produces, so token
+// slices can be allocated once at about the right size. Without it, append grows the
+// slice in small steps for large inputs, copying every token each time and leaving
+// the garbage collector many large copies to scan. Typical JSON produces about one
+// token per 2-5 bytes; if the guess is low, append still grows the slice as usual.
+func estimatedTokenCount(n int) int {
+	return n/4 + 1
+}
+
 // Tokens returns a slice of all tokens produced so far by the lexer.
 func (l *Lexer) Tokens() Tokens {
-	tokens := []Token{}
+	tokens := make(Tokens, 0, estimatedTokenCount(len(l.input)))
 
 	for {
 		token := l.Token()
@@ -385,9 +394,10 @@ func (l *Lexer) Tokens() Tokens {
 	return tokens
 }
 
-// TokensWithoutWhitespace returns a slice of all tokens without whitespace produced so far by the lexer.
+// TokensWithout returns a slice of all tokens produced so far by the lexer, leaving out
+// tokens of the given kind. The parser uses it with WHITESPACE, which it would skip anyway.
 func (l *Lexer) TokensWithout(kind TokenKind) Tokens {
-	tokens := []Token{}
+	tokens := make(Tokens, 0, estimatedTokenCount(len(l.input)))
 
 	for {
 		token := l.Token()

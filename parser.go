@@ -40,7 +40,10 @@ func NewParser(input []byte, config *ParserConfig) Parser {
 func (p *Parser) Parse() (JSON, error) {
 	l := NewLexer(p.input, p.config)
 
-	tokens := l.Tokens()
+	// Whitespace tokens are left out: the parser skips them anyway, and in indented
+	// JSON they are most of the tokens. Storing them made parsing several times slower
+	// and kept them in memory for as long as the parsed tree is in use.
+	tokens := l.TokensWithout(WHITESPACE)
 	chunks, err := tokens.Split()
 	lastIndex := len(chunks) - 1
 
