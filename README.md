@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo-wordmark.svg" alt="jsonvx logo" width="420">
+</p>
+
 # JSONVX
 
 `jsonvx` is a highly configurable `JSON` `parser` and `querier` for Go.

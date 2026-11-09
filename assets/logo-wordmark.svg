@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 256" width="760" height="256" role="img" aria-labelledby="jsonvx-wordmark-title">
+  <title id="jsonvx-wordmark-title">jsonvx</title>
+  <style>
+    .jsonvx-word { fill: #111827; }
+    @media (prefers-color-scheme: dark) {
+      .jsonvx-word { fill: #F9FAFB; }
+    }
+  </style>
+  <defs>
+    <linearGradient id="jsonvx-wm-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="jsonvx-wm-text" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <radialGradient id="jsonvx-wm-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Icon (same artwork as logo.svg) -->
+  <g>
+    <rect width="256" height="256" rx="56" fill="url(#jsonvx-wm-bg)"/>
+    <circle cx="128" cy="128" r="104" fill="url(#jsonvx-wm-glow)"/>
+    <circle cx="128" cy="128" r="96" fill="none" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="3"/>
+    <circle cx="128" cy="128" r="84" fill="none" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2" stroke-dasharray="3 9"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M96 60 C76 60 78 76 78 92 L78 108 C78 120 72 128 62 128 C72 128 78 136 78 148 L78 164 C78 180 76 196 96 196"/>
+      <path d="M160 60 C180 60 178 76 178 92 L178 108 C178 120 184 128 194 128 C184 128 178 136 178 148 L178 164 C178 180 180 196 160 196"/>
+    </g>
+    <g fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M100 108 L114 148 L128 108"/>
+      <path d="M136 108 L156 148 M156 108 L136 148"/>
+    </g>
+    <path d="M196 46 Q198.5 57.5 210 60 Q198.5 62.5 196 74 Q193.5 62.5 182 60 Q193.5 57.5 196 46 Z" fill="#FBBF24"/>
+    <path d="M60 184 Q61.3 190.7 68 192 Q61.3 193.3 60 200 Q58.7 193.3 52 192 Q58.7 190.7 60 184 Z" fill="#FBBF24" fill-opacity="0.85"/>
+  </g>
+
+  <!-- Name -->
+  <text x="296" y="166" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="118" font-weight="700" letter-spacing="-2"><tspan class="jsonvx-word">json</tspan><tspan fill="url(#jsonvx-wm-text)">vx</tspan></text>
+</svg>
