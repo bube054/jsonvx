@@ -11,7 +11,7 @@ import (
 // to accept features that are not allowed by the standard [ECMA-404] specification but may appear
 // in relaxed formats like [JSON5] or user-generated JSON.
 //
-// [ECMA-404]: https://datatracker.ietf.org/doc/html/rfc7159
+// [ECMA-404]: https://ecma-international.org/publications-and-standards/standards/ecma-404/
 // [JSON5]: https://json5.org/
 type ParserConfig struct {
 	AllowExtraWS bool // AllowExtraWS allows extra whitespace characters that are not normally permitted by strict JSON.
@@ -41,6 +41,24 @@ type ParserConfig struct {
 
 	AllowLineComments  bool // AllowLineComments enables the use of single-line comments (// ...).
 	AllowBlockComments bool // AllowBlockComments enables the use of block comments (/* ... */).
+
+	// MaxDepth is the maximum nesting depth of arrays and objects the parser accepts.
+	// Input nested deeper than this is rejected with ErrJSONTooDeep instead of being parsed.
+	// This protects against stack overflows, which crash the whole program, on hostile input.
+	// A value of 0 or less means DefaultMaxDepth.
+	MaxDepth int
+}
+
+// DefaultMaxDepth is the nesting depth limit used when ParserConfig.MaxDepth is 0 or less.
+const DefaultMaxDepth = 1000
+
+// maxDepth returns the effective nesting depth limit.
+func (c *ParserConfig) maxDepth() int {
+	if c.MaxDepth <= 0 {
+		return DefaultMaxDepth
+	}
+
+	return c.MaxDepth
 }
 
 // NewParserConfig creates a new ParserConfig instance, optionally applying one or more configuration options.
@@ -85,6 +103,8 @@ func (c *ParserConfig) String() string {
 	for _, f := range configFields {
 		b.WriteString(fmt.Sprintf("  %s: %v,\n", f.name, f.value))
 	}
+
+	b.WriteString(fmt.Sprintf("  MaxDepth: %d,\n", c.maxDepth()))
 
 	b.WriteString("}")
 	return b.String()
@@ -182,6 +202,14 @@ func WithAllowLineComments(allow bool) func(*ParserConfig) {
 func WithAllowBlockComments(allow bool) func(*ParserConfig) {
 	return func(c *ParserConfig) {
 		c.AllowBlockComments = allow
+	}
+}
+
+// WithMaxDepth sets the maximum nesting depth of arrays and objects.
+// A value of 0 or less means DefaultMaxDepth.
+func WithMaxDepth(depth int) func(*ParserConfig) {
+	return func(c *ParserConfig) {
+		c.MaxDepth = depth
 	}
 }
 

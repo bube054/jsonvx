@@ -11,6 +11,7 @@ var (
 	ErrJSONDuplicateKey    = errors.New("duplicate key in JSON object")
 	ErrJSONNoContent       = errors.New("no meaningful content to parse")
 	ErrJSONMultipleContent = errors.New("multiple JSON values")
+	ErrJSONTooDeep         = errors.New("JSON nesting too deep")
 )
 
 type Parser struct {
@@ -22,6 +23,8 @@ type Parser struct {
 	curPos    int
 	peekToken Token
 	peekPos   int
+
+	depth int // current nesting depth of arrays and objects
 }
 
 func NewParser(input []byte, config *ParserConfig) Parser {
@@ -73,6 +76,7 @@ func (p *Parser) Parse() (JSON, error) {
 	p.curToken = Token{Kind: EOF}
 	p.peekPos = -1
 	p.peekToken = Token{Kind: EOF}
+	p.depth = 0
 
 	p.nextToken()
 	p.nextToken()
@@ -125,7 +129,25 @@ func (p *Parser) parseNumber() (JSON, error) {
 	return newNumber(&p.tokens[p.curPos], p.nextToken), nil
 }
 
+// enterNested records that the parser is going one level deeper into an array or object.
+// It returns ErrJSONTooDeep once the configured MaxDepth is exceeded, so deeply nested
+// input fails with an error instead of overflowing the stack.
+func (p *Parser) enterNested() error {
+	p.depth++
+
+	if p.depth > p.config.maxDepth() {
+		return WrapJSONTooDeepError(p.curToken, p.config.maxDepth())
+	}
+
+	return nil
+}
+
 func (p *Parser) parseArray() (JSON, error) {
+	if err := p.enterNested(); err != nil {
+		return nil, err
+	}
+	defer func() { p.depth-- }()
+
 	items := []JSON{}
 	p.nextToken()
 
@@ -172,6 +194,11 @@ func (p *Parser) parseArray() (JSON, error) {
 }
 
 func (p *Parser) parseObject() (JSON, error) {
+	if err := p.enterNested(); err != nil {
+		return nil, err
+	}
+	defer func() { p.depth-- }()
+
 	properties := []KeyValue{}
 	p.nextToken()
 
@@ -349,6 +376,16 @@ func WrapJSONUnexpectedCharError(token Token) error {
 
 func WrapJSONSyntaxError(token Token) error {
 	return WrapUnexpectedCharError(ErrJSONSyntax, token)
+}
+
+func WrapJSONTooDeepError(token Token, maxDepth int) error {
+	return fmt.Errorf("%w: %q exceeds maximum depth of %d at line %d, column %d",
+		ErrJSONTooDeep,
+		token.Literal,
+		maxDepth,
+		token.Line,
+		token.Column,
+	)
 }
 
 func WrapJSONMultipleContentError(token Token) error {
