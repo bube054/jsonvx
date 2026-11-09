@@ -1,17 +1,17 @@
 package jsonvx
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"sort"
 )
 
 var (
 	ErrJSONSyntax          = errors.New("JSON syntax error")
 	ErrJSONUnexpectedChar  = errors.New("unexpected character in JSON input")
+	ErrJSONDuplicateKey    = errors.New("duplicate key in JSON object")
 	ErrJSONNoContent       = errors.New("no meaningful content to parse")
 	ErrJSONMultipleContent = errors.New("multiple JSON values")
+	ErrJSONTooDeep         = errors.New("JSON nesting too deep")
 )
 
 type Parser struct {
@@ -23,6 +23,8 @@ type Parser struct {
 	curPos    int
 	peekToken Token
 	peekPos   int
+
+	depth int // current nesting depth of arrays and objects
 }
 
 func NewParser(input []byte, config *ParserConfig) Parser {
@@ -41,11 +43,12 @@ func NewParser(input []byte, config *ParserConfig) Parser {
 func (p *Parser) Parse() (JSON, error) {
 	l := NewLexer(p.input, p.config)
 
-	tokens := l.Tokens()
+	// Whitespace tokens are left out: the parser skips them anyway, and in indented
+	// JSON they are most of the tokens. Storing them made parsing several times slower
+	// and kept them in memory for as long as the parsed tree is in use.
+	tokens := l.TokensWithout(WHITESPACE)
 	chunks, err := tokens.Split()
 	lastIndex := len(chunks) - 1
-	// fmt.Println(tokens)
-	// fmt.Println(chunks, err)
 
 	if err != nil {
 
@@ -73,6 +76,7 @@ func (p *Parser) Parse() (JSON, error) {
 	p.curToken = Token{Kind: EOF}
 	p.peekPos = -1
 	p.peekToken = Token{Kind: EOF}
+	p.depth = 0
 
 	p.nextToken()
 	p.nextToken()
@@ -102,9 +106,6 @@ func (p *Parser) parse() (JSON, error) {
 }
 
 func (p *Parser) parseDefault() (JSON, error) {
-	// fmt.Println("prev Token", p.prevToken)
-	// fmt.Println("current Token", p.curToken)
-	// fmt.Println("peek Token", p.peekToken)
 	return nil, WrapJSONUnexpectedCharError(p.curToken)
 }
 
@@ -128,7 +129,25 @@ func (p *Parser) parseNumber() (JSON, error) {
 	return newNumber(&p.tokens[p.curPos], p.nextToken), nil
 }
 
+// enterNested records that the parser is going one level deeper into an array or object.
+// It returns ErrJSONTooDeep once the configured MaxDepth is exceeded, so deeply nested
+// input fails with an error instead of overflowing the stack.
+func (p *Parser) enterNested() error {
+	p.depth++
+
+	if p.depth > p.config.maxDepth() {
+		return WrapJSONTooDeepError(p.curToken, p.config.maxDepth())
+	}
+
+	return nil
+}
+
 func (p *Parser) parseArray() (JSON, error) {
+	if err := p.enterNested(); err != nil {
+		return nil, err
+	}
+	defer func() { p.depth-- }()
+
 	items := []JSON{}
 	p.nextToken()
 
@@ -137,7 +156,6 @@ func (p *Parser) parseArray() (JSON, error) {
 	for !p.expectCurToken(RIGHT_SQUARE_BRACE) {
 		item, err := p.parse()
 		if err != nil {
-			// putArray(items)
 			return nil, err
 		}
 
@@ -176,10 +194,17 @@ func (p *Parser) parseArray() (JSON, error) {
 }
 
 func (p *Parser) parseObject() (JSON, error) {
+	if err := p.enterNested(); err != nil {
+		return nil, err
+	}
+	defer func() { p.depth-- }()
+
 	properties := []KeyValue{}
 	p.nextToken()
 
 	p.ignoreWhitespacesOrComments()
+
+	var seen map[string]int // decoded key -> its index in properties, created on the first key
 
 	for !p.expectCurToken(RIGHT_CURLY_BRACE) {
 		keyToken := p.curToken
@@ -189,10 +214,6 @@ func (p *Parser) parseObject() (JSON, error) {
 		}
 
 		keyString, ok := jsonKey.(*String)
-
-		if !ok {
-			return nil, WrapJSONSyntaxError(keyToken)
-		}
 
 		if !ok {
 			return nil, WrapJSONSyntaxError(keyToken)
@@ -229,12 +250,30 @@ func (p *Parser) parseObject() (JSON, error) {
 			return nil, WrapJSONSyntaxError(*valueString.Token)
 		}
 
+		// Keys are decoded up front so that sorting, QueryPath and ForEach all see
+		// the real key (e.g. "caf\u00e9" is stored as "café").
 		keySlice := key
 		if keyString.Token.SubKind != IDENT {
-			keySlice = key[1 : len(key)-1]
+			keySlice = []byte(unescapeString(stringContent(key)))
 		}
 
-		properties = append(properties, KeyValue{key: keySlice, value: value})
+		// A repeated key either fails (DisallowDuplicateKeys) or replaces the earlier
+		// value, so the last one wins and each key appears only once in the object.
+		// The key keeps the position where it first appeared, as in JavaScript.
+		if seen == nil {
+			seen = make(map[string]int)
+		}
+
+		if i, dup := seen[string(keySlice)]; dup {
+			if p.config.DisallowDuplicateKeys {
+				return nil, WrapJSONDuplicateKeyError(keyToken, keySlice)
+			}
+
+			properties[i].value = value
+		} else {
+			seen[string(keySlice)] = len(properties)
+			properties = append(properties, KeyValue{key: keySlice, value: value})
+		}
 
 		hasComma := p.expectCurToken(COMMA)
 		isClosingBracket := p.expectCurToken(RIGHT_CURLY_BRACE)
@@ -263,11 +302,10 @@ func (p *Parser) parseObject() (JSON, error) {
 		p.ignoreWhitespacesOrComments()
 	}
 
-	sort.Slice(properties, func(i, j int) bool {
-		return bytes.Compare(properties[i].key, properties[j].key) < 0
-	})
-
-	return newObject(properties, p.nextToken), nil
+	// Properties stay in the order they were written. The table built above for
+	// duplicate detection becomes the object's lookup index, so QueryPath can jump
+	// straight to a key without the keys having to be sorted.
+	return newObject(properties, seen, p.nextToken), nil
 }
 
 func (p *Parser) nextToken() {
@@ -340,6 +378,16 @@ func WrapJSONSyntaxError(token Token) error {
 	return WrapUnexpectedCharError(ErrJSONSyntax, token)
 }
 
+func WrapJSONTooDeepError(token Token, maxDepth int) error {
+	return fmt.Errorf("%w: %q exceeds maximum depth of %d at line %d, column %d",
+		ErrJSONTooDeep,
+		token.Literal,
+		maxDepth,
+		token.Line,
+		token.Column,
+	)
+}
+
 func WrapJSONMultipleContentError(token Token) error {
 	return fmt.Errorf("%w: extra value %q at line %d, column %d",
 		ErrJSONMultipleContent,
@@ -349,128 +397,11 @@ func WrapJSONMultipleContentError(token Token) error {
 	)
 }
 
-// var (
-// 	DefaultArrayCap  = 8
-// 	DefaultObjectCap = 8
-// )
-
-// var arrayPool = sync.Pool{
-// 	New: func() any {
-// 		array := make([]JSON, 0, DefaultArrayCap)
-// 		return &array
-// 	},
-// }
-
-// func getArray() *[]JSON {
-// 	return arrayPool.Get().(*[]JSON)
-// }
-
-// func putArray(a *[]JSON) {
-// 	*a = (*a)[:0]
-// 	arrayPool.Put(a)
-// }
-
-// var objectPool = sync.Pool{
-// 	New: func() any {
-// 		object := make([]KeyValue, 0, DefaultObjectCap)
-// 		return object
-// 	},
-// }
-
-// func getObject() []KeyValue {
-// 	return objectPool.Get().([]KeyValue)
-// }
-
-// func putObject(m []KeyValue) {
-// 	m = (m)[:0]
-// 	objectPool.Put(&m)
-// }
-
-// SyntaxError: JSON.parse: unterminated string literal
-// SyntaxError: JSON.parse: bad control character in string literal
-// SyntaxError: JSON.parse: bad character in string literal
-// SyntaxError: JSON.parse: bad Unicode escape
-// SyntaxError: JSON.parse: bad escape character
-// SyntaxError: JSON.parse: unterminated string
-// SyntaxError: JSON.parse: no number after minus sign
-// SyntaxError: JSON.parse: unexpected non-digit
-// SyntaxError: JSON.parse: missing digits after decimal point
-// SyntaxError: JSON.parse: unterminated fractional number/
-// SyntaxError: JSON.parse: missing digits after exponent indicator
-// SyntaxError: JSON.parse: missing digits after exponent sign
-// SyntaxError: JSON.parse: exponent part is missing a number
-// SyntaxError: JSON.parse: unexpected end of data
-// SyntaxError: JSON.parse: unexpected keyword
-// SyntaxError: JSON.parse: unexpected character
-// SyntaxError: JSON.parse: end of data while reading object contents
-// SyntaxError: JSON.parse: expected property name or '}'
-// SyntaxError: JSON.parse: end of data when ',' or ']' was expected
-// SyntaxError: JSON.parse: expected ',' or ']' after array element
-// SyntaxError: JSON.parse: end of data when property name was expected
-// SyntaxError: JSON.parse: expected double-quoted property name
-// SyntaxError: JSON.parse: end of data after property name when ':' was expected
-// SyntaxError: JSON.parse: expected ':' after property name in object
-// SyntaxError: JSON.parse: end of data after property value in object
-// SyntaxError: JSON.parse: expected ',' or '}' after property value in object
-// SyntaxError: JSON.parse: expected ',' or '}' after property-value pair in object literal
-// SyntaxError: JSON.parse: property names must be double-quoted strings
-// SyntaxError: JSON.parse: expected property name or '}'
-// SyntaxError: JSON.parse: unexpected character
-// SyntaxError: JSON.parse: unexpected non-whitespace character after JSON data
-
-// ✅ Option 1: 123+4i or 123-4i
-// json
-// Copy
-// Edit
-// "3+4i"
-// "3-4i"
-// Similar to: Mathematical notation.
-
-// Pros: Familiar to humans; used in many languages (e.g., MATLAB, Python's str() for complex).
-
-// Cons: Needs parsing logic to extract real/imag parts.
-
-// ✅ Option 2: complex(3,4)
-// json
-// Copy
-// Edit
-// "complex(3,4)"
-// Similar to: Python's constructor syntax.
-
-// Pros: Explicit about structure; easy to parse.
-
-// Cons: Verbose; less “number-like”.
-
-// 🌀 Less conventional options:
-// Option 3: 3@4
-// json
-// Copy
-// Edit
-// "3@4"
-// Interpreted as: real@imag.
-
-// Pros: Short and parseable.
-
-// Cons: Not standard anywhere; might be confusing.
-
-// Option 4: 3+4j
-// json
-// Copy
-// Edit
-// "3+4j"
-// Used by: Python.
-
-// Pros: Already in use.
-
-// Cons: j instead of i might be less intuitive for non-engineers.
-
-// 🔥 My recommendation
-// If JSON followed existing number patterns and you wanted the cleanest textual form, it would likely look like:
-
-// json
-// Copy
-// Edit
-// "3+4i"   // for 3 + 4i
-// "5-2i"   // for 5 - 2i
-// "0+1i"   // for pure imaginary
-// "4+0i"   // for pure real (still formatted as complex)
+func WrapJSONDuplicateKeyError(token Token, key []byte) error {
+	return fmt.Errorf("%w: %q at line %d, column %d",
+		ErrJSONDuplicateKey,
+		key,
+		token.Line,
+		token.Column,
+	)
+}

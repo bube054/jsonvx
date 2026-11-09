@@ -153,32 +153,26 @@ func (l *Lexer) Token() Token {
 		l.readChar()
 
 		for {
-			next := l.peek()
-			prev := l.prev()
-			prevBy2 := l.prevBy(2)
-
 			if l.char == 0 {
 				return newToken(ILLEGAL, INVALID_STRING, l.input[pos:], l.line, col, nil)
 			}
 
-			// Case 1: Quote is not escaped (e.g., "\"" or '\'')
-			notEscaped := l.char == char && prev != '\\'
-
-			// Case 2: Quote is escaped but backslash itself is escaped (e.g., "\\\"" or '\\\”)
-			escapedEscape := l.char == char && prev == '\\' && prevBy2 == '\\'
-
-			if notEscaped || escapedEscape {
+			// An unescaped closing quote ends the string. Escaped quotes never reach
+			// this check, because escape sequences are consumed whole below.
+			if l.char == char {
 				if char == '\'' {
 					return newToken(STRING, SINGLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
 				}
 
-				if char == '"' {
-					return newToken(STRING, DOUBLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
-				}
+				return newToken(STRING, DOUBLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
 			}
 
-			// Handle escape sequences
-			if l.char == '\\' && prev != '\\' {
+			// Handle escape sequences: validate the character after the backslash,
+			// then consume the backslash so that character is skipped as a unit.
+			// This keeps runs like \\\" correct (escaped backslash, escaped quote).
+			if l.char == '\\' {
+				next := l.peek()
+
 				switch next {
 				case char: // escaped quote
 				case '\\': // escaped backslash
@@ -208,6 +202,8 @@ func (l *Lexer) Token() Token {
 						return newToken(ILLEGAL, INVALID_ESCAPED_STRING, l.input[pos:], l.line, col, nil)
 					}
 				}
+
+				l.readChar() // consume the backslash; the escaped character is consumed below
 			}
 
 			l.readChar()
@@ -337,16 +333,6 @@ func (l *Lexer) Token() Token {
 				return newToken(NUMBER, SCI_NOT, num, l.line, col, nil)
 			}
 
-			// 			isFlt := isFloat(num)
-
-			// if isFlt && (bytes.Contains(num, []byte("e")) || bytes.Contains(num, []byte("E"))) {
-			// 	return newToken(NUMBER, SCI_NOT, num, l.line, col, nil)
-			// }
-
-			// if isFlt {
-			// 	return newToken(NUMBER, FLOAT, num, l.line, col, nil)
-			// }
-
 			isHexDec := isHex(num)
 			if isHexDec && !l.config.AllowHexNumbers {
 				return newToken(ILLEGAL, INVALID_HEX_NUMBER, l.input[pos:], l.line, col, nil)
@@ -382,9 +368,18 @@ func (l *Lexer) Token() Token {
 	}
 }
 
+// estimatedTokenCount guesses how many tokens an input of n bytes produces, so token
+// slices can be allocated once at about the right size. Without it, append grows the
+// slice in small steps for large inputs, copying every token each time and leaving
+// the garbage collector many large copies to scan. Typical JSON produces about one
+// token per 2-5 bytes; if the guess is low, append still grows the slice as usual.
+func estimatedTokenCount(n int) int {
+	return n/4 + 1
+}
+
 // Tokens returns a slice of all tokens produced so far by the lexer.
 func (l *Lexer) Tokens() Tokens {
-	tokens := []Token{}
+	tokens := make(Tokens, 0, estimatedTokenCount(len(l.input)))
 
 	for {
 		token := l.Token()
@@ -399,9 +394,10 @@ func (l *Lexer) Tokens() Tokens {
 	return tokens
 }
 
-// TokensWithoutWhitespace returns a slice of all tokens without whitespace produced so far by the lexer.
+// TokensWithout returns a slice of all tokens produced so far by the lexer, leaving out
+// tokens of the given kind. The parser uses it with WHITESPACE, which it would skip anyway.
 func (l *Lexer) TokensWithout(kind TokenKind) Tokens {
-	tokens := []Token{}
+	tokens := make(Tokens, 0, estimatedTokenCount(len(l.input)))
 
 	for {
 		token := l.Token()

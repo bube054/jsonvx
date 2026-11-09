@@ -1,12 +1,14 @@
 # JSONVX
 
-`jsonvx` is a highly configurable `JSON` `parser`, `querier`, and `formatter` for Go.
+`jsonvx` is a highly configurable `JSON` `parser` and `querier` for Go.
 
-It supports both strict `JSON` (as defined by [ECMA-404](https://datatracker.ietf.org/doc/html/rfc7159)) and up to a more relaxed variant such as [JSON5](https://json5.org/). This makes it ideal for parsing user-generated data, configuration files, or legacy formats that don't fully comply with the JSON specification.
+> **Formatting coming soon:** writing parsed data back out as valid `JSON` (compact or indented, including converting `JSON5` to standard `JSON`) is planned for an upcoming release.
+
+It supports both strict `JSON` (as defined by [ECMA-404](https://ecma-international.org/publications-and-standards/standards/ecma-404/)) and up to a more relaxed variant such as [JSON5](https://json5.org/). This makes it ideal for parsing user-generated data, configuration files, or legacy formats that don't fully comply with the JSON specification.
 
 With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives you fine-grained control over how `JSON` is parsed. You can enable or disable features like:
 
-- [Hexadecimal numbers `(0xFF)`](#allowextraws)
+- [Hexadecimal numbers `(0xFF)`](#allowhexnumbers)
 - [`NaN` and `Infinity` as numeric values](#allownan)
 - [Leading plus signs in numbers `(+42)`](#allowleadingplus)
 - [Decimal edge cases like `.5` or `5.`](#allowpointedgenumbers)
@@ -17,11 +19,14 @@ With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives y
 - [Trailing commas in arrays or objects](#allowtrailingcommaarray)
 - [Line comments `(// comment)` and Block comments `(/* comment */)`](#allowlinecomments)
 - [Extra whitespace in unusual places](#allowextraws)
+- [Rejecting duplicate object keys](#disallowduplicatekeys)
 - [Enable `JSON5`](#allowjson5)
 
-After parsing, `jsonvx` gives you a clean abstract syntax tree `(AST)` that you can either traverse manually or query using the built-in API. Each node in the tree implements a common `JSON interface`, so you can safely `inspect`, `transform`, or `stringify` data as needed.
+It also guards against hostile input with a [nesting depth limit](#maxdepth), on by default, so deeply nested data returns an error instead of crashing your program.
 
-`jsonvx` is designed for flexibility and correctness — not raw performance. It prioritizes clarity and configurability over speed, making it perfect for tools, linters, formatters, and config loaders where input may vary or include non-standard extensions.
+After parsing, `jsonvx` gives you a clean abstract syntax tree `(AST)` that you can either traverse manually or query using the built-in API. Each node in the tree implements a common `JSON interface`, so you can safely `inspect` and `transform` data as needed. Writing it back out as `JSON` is [coming soon](#jsonvx).
+
+`jsonvx` is designed for flexibility and correctness — not raw performance. It prioritizes clarity and configurability over speed, making it perfect for tools, linters, and config loaders where input may vary or include non-standard extensions.
 
 If you need full control over how `JSON` is interpreted and a structured way to work with the result, `jsonvx` is for you.
 
@@ -124,7 +129,7 @@ numNode, _ := rootObj.QueryPath("friends", "2", "age") // => 47
 
 ## Configuring The Parser
 
-You can configure the `Parser` using the functional options pattern, allowing you to enable relaxed JSON features individually. By default, the parser is strict (all options disabled), matching the [ECMA-404](https://datatracker.ietf.org/doc/html/rfc7159) specification. To allow non-standard or user-friendly formats (like [JSON5](https://json5.org)), pass options when creating the config:
+You can configure the `Parser` using the functional options pattern, allowing you to enable relaxed JSON features individually. By default, the parser is strict (all options disabled), matching the [ECMA-404](https://ecma-international.org/publications-and-standards/standards/ecma-404/) specification. To allow non-standard or user-friendly formats (like [JSON5](https://json5.org)), pass options when creating the config:
 
   ### `AllowExtraWS`:
   Allows extra whitespace characters that are not normally permitted by strict `JSON`.
@@ -136,11 +141,17 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   parser := jsonvx.NewParser([]byte("{\"key\":\u00A0\"value\"}"), cfg) // valid No-Break Space
   ```
   ### `AllowHexNumbers`:
-  Enables support for hexadecimal numeric literals (e.g., `0x1F`).
+  Enables support for hexadecimal numeric literals (e.g., `0x1F`). Upper and lower case work (`0xff`, `0XFF`), as do negative numbers (`-0x10`) and, with [`AllowLeadingPlus`](#allowleadingplus), a leading plus. `Value()` returns the number as a `float64`; like decimal numbers, hex numbers longer than about 16 digits are rounded to the nearest `float64`.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowHexNumbers(true))
   parser := jsonvx.NewParser([]byte("0x1F"), cfg) // valid 31 in hex
+
+  node, _ := parser.Parse()
+  num, _ := jsonvx.AsNumber(node)
+  value, _ := num.Value() // 31
   ```
+
+  > **Fixed in v1.1.0:** before v1.1.0, hex numbers parsed but `Value()` always returned an error.
   ### `AllowPointEdgeNumbers`:
   Allows numbers like `.5` or `5.` without requiring a digit before/after the decimal point.
   ```go
@@ -212,13 +223,20 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowLineComments(true))
   parser := jsonvx.NewParser([]byte(`// comment
-  123`), cfg) // valid number after liner comment
+  123`), cfg) // valid number after line comment
   ```
   ### `AllowBlockComments`:
-  Enables the use of block comments (/_ ... _/).
+  Enables the use of block comments (`/* ... */`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowBlockComments(true))
   parser := jsonvx.NewParser([]byte(`/* comment */ 123`), cfg)
+  ```
+  ### `DisallowDuplicateKeys`:
+  Rejects objects that repeat a key with `ErrJSONDuplicateKey`, reporting where the duplicate is. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` count as the same key. When disabled (the default), the last value for a repeated key wins. Useful for linters and validators, where a repeated key is usually a mistake.
+  ```go
+  cfg := jsonvx.NewParserConfig(jsonvx.WithDisallowDuplicateKeys(true))
+  parser := jsonvx.NewParser([]byte(`{"a": 1, "b": 2}`), cfg) // valid, keys are unique
+  parser := jsonvx.NewParser([]byte(`{"a": 1, "a": 2}`), cfg) // error: duplicate key in JSON object: "a" at line 1, column 10
   ```
   ### `AllowJSON5`:
   Enables the use of [`JSON5`](https://json5.org) syntax.
@@ -238,19 +256,32 @@ No \\n's!",
 }
 `), jsonvx.JSON5Config())
   ```
+  ### `MaxDepth`:
+  Sets the maximum nesting depth of arrays and objects (default `1000`, see `jsonvx.DefaultMaxDepth`). Deeper input fails with `ErrJSONTooDeep` instead of overflowing the stack, which would crash the whole program. This applies to every config, including `JSON5Config()`. A value of `0` or less uses the default.
+  ```go
+  cfg := jsonvx.NewParserConfig(jsonvx.WithMaxDepth(2))
+  parser := jsonvx.NewParser([]byte(`[[1]]`), cfg)   // valid, depth 2
+  parser := jsonvx.NewParser([]byte(`[[[1]]]`), cfg) // error: JSON nesting too deep: "[" exceeds maximum depth of 2 at line 1, column 3
+  ```
 
 ## Parsing behavior
 Below are examples of how to `parse`, `traverse` and `retrieve` values from the parsed `JSON` input using the `Parser`.
 
 ### Object
 - `Objects` are stored as a `slice` of `jsonvx.KeyValue` struct.
-- keys are stored as `[]byte` and `sorted` `lexicographically` for `log(n)` value retrieval.
+- Keys keep the order they were written in the input. `ForEach`, `Keys()` and `String()` all follow that order, which matters for formatters and linters. Use `sort.Strings(obj.Keys())` if you want alphabetical order.
+- keys are stored as `[]byte`. Each object also keeps a lookup table from key to position, so `QueryPath` jumps straight to a key instead of searching for it.
 - values are stored as `jsonvx.JSON`
-- Each key-value pair is accessible using the `ForEach` method.
+- Each key-value pair is accessible using the `ForEach` method, and `Keys()` returns the keys as `[]string`.
+- `Equal` compares objects by key, so key order does not affect it.
 - Mixed value types (e.g., `numbers`, `strings`, `objects`) are obviously supported.
-- Duplicate keys are included, but the first key-value pair is gotten with the `QueryPath` method.
+- Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. `{"a": 1, "a": 2}` is stored as `{"a": 2}`, so `Len()`, `ForEach` and `QueryPath` all see each key once. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` are the same key. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
 
-This example shows how to parse a `JSON` object using `jsonvx`, cast it to an `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
+> **Changed in v1.1.0:** before v1.1.0, duplicate keys were all kept and `QueryPath` was documented to return the first one. That was not reliable for larger objects, because the key sort did not keep equal keys in order. A repeated key now keeps the position where it first appeared, with the last value, as in JavaScript.
+>
+> **Changed in v1.1.0:** before v1.1.0, keys were sorted alphabetically, so `ForEach` and `String()` did not follow the input. They now keep the input order.
+
+This example shows how to parse a `JSON` object using `jsonvx`, cast it to a `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
 
 ```go
 parser := jsonvx.NewParser([]byte(`{"name": "Alice", "age": 30}`), jsonvx.NewParserConfig())
@@ -271,6 +302,10 @@ if !ok {
 objNode.ForEach(func(key []byte, value jsonvx.JSON, object *jsonvx.Object) {
 	fmt.Printf("Key: %s, Value: %v\n", string(key), value)
 })
+// Key: name, Value: Alice
+// Key: age, Value: 30
+
+fmt.Println(objNode.Keys()) // [name age]
 ```
 
 ### Array
@@ -278,7 +313,7 @@ objNode.ForEach(func(key []byte, value jsonvx.JSON, object *jsonvx.Object) {
 - Items are stored as a `slice` of `jsonvx.JSON`
 - Each item is accessible using the `ForEach` method.
 
-This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to an `jsonvx.Array` node, and iterate over its elements using the built-in `ForEach` method.
+This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to a `jsonvx.Array` node, and iterate over its elements using the built-in `ForEach` method.
 
 ```go
 parser := jsonvx.NewParser([]byte(`[1, 2, 3]`), jsonvx.NewParserConfig())
@@ -304,9 +339,13 @@ arrNode.ForEach(func(item jsonvx.JSON, index int, array *jsonvx.Array) {
 ### String
 
 - JSON string values are parsed as `jsonvx.String`.
-- `Value()` returns the raw Go` string value.
+- `Value()` returns the decoded Go `string` value: escape sequences such as `\n`, `\"`, `\u00e9` and emoji pairs like `\ud83d\ude00` become the characters they stand for. With `JSON5` options enabled, `\'`, `\v`, `\0`, `\xHH` and line continuations (a backslash at the end of a line) are decoded too.
+- `Raw()` returns the string exactly as written in the input, without the surrounding quotes and without decoding escapes.
+- Object keys are decoded the same way, so `{"caf\u00e9": 1}` is queried with `QueryPath("café")`.
 
-This example demonstrates how to parse a `JSON` `string` using `jsonvx`, cast it to an `jsonvx.String` node, and get its `string` value using the built-in `Value` method.
+> **Changed in v1.1.0:** before v1.1.0, `Value()` returned the string with escape sequences left undecoded (`"a\nb"` gave a backslash and an `n`). If you relied on that, use `Raw()`.
+
+This example demonstrates how to parse a `JSON` `string` using `jsonvx`, cast it to a `jsonvx.String` node, and get its `string` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte(`"Hello, World!"`), jsonvx.NewParserConfig())
@@ -332,13 +371,29 @@ if err != nil {
 fmt.Println(strValue) // Output: Hello, World!
 ```
 
+Escape sequences are decoded by `Value()`, while `Raw()` keeps them as written:
+
+```go
+parser := jsonvx.NewParser([]byte(`"caf\u00e9\nsay \"hi\""`), nil)
+node, _ := parser.Parse()
+strNode, _ := jsonvx.AsString(node)
+
+value, _ := strNode.Value() // café
+                            // say "hi"
+raw, _ := strNode.Raw()     // caf\u00e9\nsay \"hi\"
+```
+
 ### Number
 
 - JSON numbers are parsed as a `jsonvx.Number`.
-- `Value()` returns the raw Go `float64` value.
-- `Integer`, `Float`, `SciNot`, `Hex`, `Infinity` and ironically `NaN` number types are supported.
+- `Value()` returns the number as a Go `float64`. A `float64` holds about 16 significant digits, so longer numbers are rounded: `9007199254740993` becomes `9007199254740992`.
+- When every digit matters, such as for IDs, use the exact methods instead:
+  - `Int64()` returns an exact `int64`. It returns `ErrNotInteger` for numbers written with a decimal point or exponent (`1.5`, `1.0`, `1e3`), and `ErrNumberOutOfRange` for whole numbers that don't fit in an `int64`.
+  - `BigInt()` returns an exact `*big.Int` for whole numbers of any size.
+  - `Raw()` returns the number exactly as written, such as `"1.50"` or `"0x1F"`.
+- `Integer`, `Float`, `SciNot`, `Hex`, `Infinity` and ironically `NaN` number types are supported. Whole numbers of any length are `Integer`.
 
-This example demonstrates how to parse a `JSON` `number` using `jsonvx`, cast it to an `jsonvx.Number` node, and get `float64` its value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `number` using `jsonvx`, cast it to a `jsonvx.Number` node, and get its `float64` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte("123456"), jsonvx.NewParserConfig())
@@ -364,12 +419,29 @@ if err != nil {
 fmt.Println(numValue) // Output: 123456
 ```
 
+For large IDs, `Value()` rounds while `Int64()`, `BigInt()` and `Raw()` keep every digit:
+
+```go
+parser := jsonvx.NewParser([]byte(`{"user_id": 9007199254740993}`), nil)
+node, _ := parser.Parse()
+obj, _ := jsonvx.AsObject(node)
+idNode, _ := obj.QueryPath("user_id")
+id, _ := jsonvx.AsNumber(idNode)
+
+approx, _ := id.Value() // 9.007199254740992e+15 (rounded)
+exact, _ := id.Int64()  // 9007199254740993
+big, _ := id.BigInt()   // 9007199254740993
+raw, _ := id.Raw()      // "9007199254740993"
+```
+
+> **Changed in v1.1.0:** `Int64()`, `BigInt()` and `Raw()` are new. Whole numbers too large for an `int64` are now classified as `Integer` instead of `Float` (their `Value()` is unchanged), and whole numbers too long for a `float64` now parse instead of being rejected.
+
 ### Boolean
 
 - JSON booleans are parsed as a `jsonvx.Boolean`.
 - `Value()` returns the raw Go `bool` value.
 
-This example demonstrates how to parse a `JSON` `boolean` using `jsonvx`, cast it to an `jsonvx.Boolean` node, and get `bool` its value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `boolean` using `jsonvx`, cast it to a `jsonvx.Boolean` node, and get its `bool` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte("true"), jsonvx.NewParserConfig())
@@ -400,7 +472,7 @@ fmt.Println(trueValue) // Output: true
 - JSON `null` values are parsed as a `jsonvx.Null`.
 - `Value()` returns the raw Go `nil` value.
 
-This example demonstrates how to parse a `JSON` `null` using `jsonvx`, cast it to an `jsonvx.Null` node, and get `nil` its value using the built-in `Value` method.
+This example demonstrates how to parse a `JSON` `null` using `jsonvx`, cast it to a `jsonvx.Null` node, and get its `nil` value using the built-in `Value` method.
 
 ```go
 parser := jsonvx.NewParser([]byte("null"), jsonvx.NewParserConfig())

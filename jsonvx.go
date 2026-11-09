@@ -1,4 +1,5 @@
-// Package jsonvx is a highly configurable JSON parser, querier, and formatter for Go.
+// Package jsonvx is a highly configurable JSON parser and querier for Go. Formatting (writing
+// parsed data back out as JSON) is coming soon.
 //
 // It supports both strict JSON (as defined by [ECMA-404]) and up to a more relaxed variant
 // such as [JSON5]. This makes it ideal for parsing user-generated data, configuration files,
@@ -18,20 +19,25 @@
 //   - Trailing commas in arrays or objects
 //   - Line comments (// comment) and Block comments (/* comment */)
 //   - Extra whitespace in unusual places
+//   - Rejecting duplicate object keys (by default the last value wins)
 //   - Enable JSON5
+//
+// It also guards against hostile input with a nesting depth limit ([ParserConfig.MaxDepth],
+// [DefaultMaxDepth] by default), so deeply nested data returns [ErrJSONTooDeep] instead of
+// crashing your program.
 //
 // After parsing, jsonvx gives you a clean abstract syntax tree (AST) that you can either traverse manually
 // or query using the built-in API. Each node in the tree implements a common JSON interface, so you can safely
-// inspect, transform, or stringify data as needed.
+// inspect and transform data as needed. Writing it back out as JSON is coming soon.
 //
 // jsonvx is designed for flexibility and correctness — not raw performance. It prioritizes clarity and
-// configurability over speed, making it perfect for tools, linters, formatters, and config loaders where
+// configurability over speed, making it perfect for tools, linters, and config loaders where
 // input may vary or include non-standard extensions.
 //
 // If you need full control over how JSON is interpreted and a structured way to work with the result,
 // jsonvx is for you.
 //
-// [ECMA-404]: https://datatracker.ietf.org/doc/html/rfc7159
+// [ECMA-404]: https://ecma-international.org/publications-and-standards/standards/ecma-404/
 // [JSON5]: https://json5.org/
 package jsonvx
 
@@ -40,7 +46,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -53,12 +58,16 @@ var (
 	ErrNotNull    = errors.New("value is not null")
 
 	ErrInvalidQueryKey   = errors.New("invalid query key")
+	ErrKeyNotFound       = errors.New("key not found")
 	ErrExpectedIndex     = errors.New("invalid query key, expected integer index")
 	ErrIndexOutOfRange   = errors.New("index out of range")
 	ErrEmptyArray        = errors.New("array is empty")
 	ErrInvalidJSONType   = errors.New("invalid JSON type")
 	ErrQueryExceedsDepth = errors.New("query exceeds depth for scalar value")
 )
+
+// nilString is what String returns for a nil or empty node, matching how fmt prints nil pointers.
+const nilString = "<nil>"
 
 // JSON is a common interface implemented by all JSON types (Null, Boolean, etc.).
 type JSON interface {
@@ -86,7 +95,7 @@ func (n *Null) String() string {
 
 // Value returns nil if the token is valid, or an error otherwise.
 func (n *Null) Value() (any, error) {
-	if n.Token == nil {
+	if n == nil || n.Token == nil {
 		return nil, ErrNotNull
 	}
 
@@ -128,6 +137,10 @@ func newBoolean(Token *Token, cb func()) *Boolean {
 }
 
 func (b *Boolean) String() string {
+	if b == nil || b.Token == nil {
+		return nilString
+	}
+
 	if b.Token.SubKind == TRUE {
 		return "\033[1mtrue\033[0m"
 	} else {
@@ -137,7 +150,7 @@ func (b *Boolean) String() string {
 
 // Value returns the boolean value or an error if the token is invalid.
 func (b *Boolean) Value() (bool, error) {
-	if b.Token == nil {
+	if b == nil || b.Token == nil {
 		return false, ErrNotBoolean
 	}
 
@@ -191,12 +204,19 @@ func newString(Token *Token, cb func()) *String {
 }
 
 func (s *String) String() string {
-	return (s.Token.Value()).(string)
+	value, err := s.Value()
+	if err != nil {
+		return nilString
+	}
+
+	return value
 }
 
-// Value returns the string or an error if invalid.
+// Value returns the decoded string, with escape sequences such as \n, \" and \u00e9
+// turned into the characters they stand for, or an error if invalid.
+// Use Raw to get the string exactly as written in the input.
 func (s *String) Value() (string, error) {
-	if s.Token == nil {
+	if s == nil || s.Token == nil {
 		return "", ErrNotString
 	}
 
@@ -213,6 +233,21 @@ func (s *String) Value() (string, error) {
 	}
 
 	return strVal, nil
+}
+
+// Raw returns the string exactly as written in the input, without the surrounding
+// quotes and without decoding escape sequences, so "caf\u00e9" stays `caf\u00e9`.
+// Before v1.1.0, Value returned this raw form.
+func (s *String) Raw() (string, error) {
+	if s == nil || s.Token == nil || s.Token.Kind != STRING {
+		return "", ErrNotString
+	}
+
+	if s.Token.SubKind == IDENT {
+		return string(s.Token.Literal), nil
+	}
+
+	return string(stringContent(s.Token.Literal)), nil
 }
 
 func (s *String) Equal(s2 JSON) bool {
@@ -250,22 +285,44 @@ func newNumber(Token *Token, cb func()) *Number {
 }
 
 func (n *Number) String() string {
-	return string((n.Token.Literal))
+	if n == nil || n.Token == nil {
+		return nilString
+	}
+
+	return string(n.Token.Literal)
 }
 
-// Value attempts to parse the number as float64, depending on its subtype.
+// Value returns the number as a float64, depending on its subtype.
+//
+// A float64 holds about 16 significant digits, so longer numbers are rounded to the
+// nearest float64: 9007199254740993 becomes 9007199254740992. When every digit
+// matters, such as for IDs, use Int64, BigInt or Raw instead.
 func (n *Number) Value() (float64, error) {
-	if n.Token == nil {
+	if n == nil || n.Token == nil {
 		return 0, ErrNotNumber
 	}
 
 	switch n.Token.SubKind {
-	case INTEGER, HEX:
+	case INTEGER:
 		numVal, err := ToInt(n.Token.Literal)
+		if err == nil {
+			return float64(numVal), nil
+		}
+		// Too large for int64: use the nearest float64. Int64 and BigInt give exact values.
+		floatVal, err := ToFloat(n.Token.Literal)
 		if err != nil {
 			return 0, ErrNotNumber
 		}
-		return float64(numVal), nil
+		return floatVal, nil
+	case HEX:
+		// Hex literals (e.g. 0x1F, -0xFF) can have any number of digits. Like other
+		// numbers, values too long for float64 to hold exactly are rounded to the
+		// nearest float64; values beyond float64's range are an error.
+		floatVal, ok := hexToFloat64(n.Token.Literal)
+		if !ok || math.IsInf(floatVal, 0) {
+			return 0, ErrNotNumber
+		}
+		return floatVal, nil
 	case FLOAT, SCI_NOT:
 		numVal, err := ToFloat(n.Token.Literal)
 		if err != nil {
@@ -329,6 +386,10 @@ func newArray(items []JSON, cb func()) *Array {
 }
 
 func (a *Array) String() string {
+	if a == nil {
+		return nilString
+	}
+
 	var builder strings.Builder
 	builder.WriteString("[")
 	for i, item := range a.Items {
@@ -456,20 +517,60 @@ func (kv *KeyValue) Equal(kv2 *KeyValue) bool {
 }
 
 // Object represents a JSON object.
+//
+// Properties are kept in the order they appear in the input. A repeated key keeps
+// the position where it first appeared and holds the last value written for it.
 type Object struct {
 	Properties []KeyValue
+
+	// index maps each key to its position in Properties, so lookups do not have to
+	// search. It is built by the parser. If it is nil, or no longer matches
+	// Properties because the slice was changed, lookups fall back to a linear scan.
+	index map[string]int
 }
 
 // newObject creates a new *Object value, optionally invoking a callback
-func newObject(properties []KeyValue, cb func()) *Object {
+func newObject(properties []KeyValue, index map[string]int, cb func()) *Object {
 	if cb != nil {
 		cb()
 	}
 
-	return &Object{Properties: properties}
+	return &Object{Properties: properties, index: index}
+}
+
+// lookup returns the position of key in Properties, or -1 if it is not present.
+func (o *Object) lookup(key []byte) int {
+	if i, ok := o.index[string(key)]; ok && i < len(o.Properties) && bytes.Equal(o.Properties[i].key, key) {
+		return i
+	}
+
+	// No usable index: scan from the end, so the last copy of a repeated key wins,
+	// matching how the parser resolves duplicates.
+	for i := len(o.Properties) - 1; i >= 0; i-- {
+		if bytes.Equal(o.Properties[i].key, key) {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// Keys returns the object's keys in the order they appear in the input.
+// Use sort.Strings on the result for alphabetical order.
+func (o *Object) Keys() []string {
+	keys := make([]string, len(o.Properties))
+	for i, prop := range o.Properties {
+		keys[i] = string(prop.key)
+	}
+
+	return keys
 }
 
 func (o *Object) String() string {
+	if o == nil {
+		return nilString
+	}
+
 	var builder strings.Builder
 	builder.WriteString("{")
 	length := len(o.Properties)
@@ -495,14 +596,10 @@ func (o *Object) QueryPath(paths ...string) (JSON, error) {
 	}
 
 	keyStr := paths[0]
-	keyBytes := []byte(keyStr)
 
-	index := sort.Search(len(o.Properties), func(i int) bool {
-		return bytes.Compare(o.Properties[i].key, keyBytes) >= 0
-	})
-
-	if index >= o.Len() || !bytes.Equal(o.Properties[index].key, keyBytes) {
-		return nil, fmt.Errorf("key not found: %q", keyStr)
+	index := o.lookup([]byte(keyStr))
+	if index < 0 {
+		return nil, fmt.Errorf("%w: %q", ErrKeyNotFound, keyStr)
 	}
 
 	item := o.Properties[index]
@@ -529,7 +626,8 @@ func (o *Object) QueryPath(paths ...string) (JSON, error) {
 // - object: the object being iterated
 type ObjectCallback func(key []byte, value JSON, object *Object)
 
-// ForEach calls the given callback for each key-value pair in the object.
+// ForEach calls the given callback for each key-value pair in the object,
+// in the order they appear in the input.
 // It provides the key, value, and the object itself.
 func (o *Object) ForEach(cb ObjectCallback) {
 	for _, prop := range o.Properties {
@@ -537,10 +635,16 @@ func (o *Object) ForEach(cb ObjectCallback) {
 	}
 }
 
+// Equal reports whether o2 is an object with the same keys and equal values.
+// Key order does not matter.
 func (o *Object) Equal(o2 JSON) bool {
+	if o == nil || o2 == nil {
+		return JSON(o) == o2
+	}
+
 	other, ok := AsObject(o2)
 
-	if !ok {
+	if !ok || other == nil {
 		return false
 	}
 
@@ -548,9 +652,13 @@ func (o *Object) Equal(o2 JSON) bool {
 		return false
 	}
 
-	for i, prop := range o.Properties {
-		prop2 := other.Properties[i]
+	for _, prop := range o.Properties {
+		i := other.lookup(prop.key)
+		if i < 0 {
+			return false
+		}
 
+		prop2 := other.Properties[i]
 		if !prop.Equal(&prop2) {
 			return false
 		}

@@ -238,18 +238,18 @@ func TestIsHex(t *testing.T) {
 	}{
 		// Valid hex
 		{msg: "Valid hex", p1: []byte("0xdecaf"), expected: true},
-		// {msg: "Valid hex 0", p1: []byte("0x0"), expected: true},
-		// {msg: "Valid hex 26", p1: []byte("0x1A"), expected: true},
-		// {msg: "Valid hex 255", p1: []byte("0xFF"), expected: true},
-		// {msg: "Valid hex 16", p1: []byte("0X10"), expected: true},
-		// {msg: "Valid hex 127", p1: []byte("0X7f"), expected: true},
-		// {msg: "Valid hex -42", p1: []byte("-0X2A"), expected: true},
+		{msg: "Valid hex 0", p1: []byte("0x0"), expected: true},
+		{msg: "Valid hex 26", p1: []byte("0x1A"), expected: true},
+		{msg: "Valid hex 255", p1: []byte("0xFF"), expected: true},
+		{msg: "Valid hex 16", p1: []byte("0X10"), expected: true},
+		{msg: "Valid hex 127", p1: []byte("0X7f"), expected: true},
+		{msg: "Valid hex -42", p1: []byte("-0X2A"), expected: true},
 
 		// Invalid hex
-		// {msg: "Invalid hex no digits", p1: []byte("0x"), expected: false},
-		// {msg: "Invalid hex no F>", p1: []byte("0xG1"), expected: false},
-		// {msg: "Invalid hex no prefix", p1: []byte("123"), expected: false},
-		// {msg: "Invalid hex no CSS style hex color", p1: []byte("FF00FF"), expected: false},
+		{msg: "Invalid hex no digits", p1: []byte("0x"), expected: false},
+		{msg: "Invalid hex no F>", p1: []byte("0xG1"), expected: false},
+		{msg: "Invalid hex no prefix", p1: []byte("123"), expected: false},
+		{msg: "Invalid hex no CSS style hex color", p1: []byte("FF00FF"), expected: false},
 	}
 
 	for _, test := range tests {
