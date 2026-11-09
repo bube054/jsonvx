@@ -1,10 +1,8 @@
 package jsonvx
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"sort"
 )
 
 var (
@@ -241,7 +239,7 @@ func (p *Parser) parseObject() (JSON, error) {
 
 		// A repeated key either fails (DisallowDuplicateKeys) or replaces the earlier
 		// value, so the last one wins and each key appears only once in the object.
-		// Removing duplicates here also means no equal keys ever reach the sort below.
+		// The key keeps the position where it first appeared, as in JavaScript.
 		if seen == nil {
 			seen = make(map[string]int)
 		}
@@ -284,11 +282,10 @@ func (p *Parser) parseObject() (JSON, error) {
 		p.ignoreWhitespacesOrComments()
 	}
 
-	sort.Slice(properties, func(i, j int) bool {
-		return bytes.Compare(properties[i].key, properties[j].key) < 0
-	})
-
-	return newObject(properties, p.nextToken), nil
+	// Properties stay in the order they were written. The table built above for
+	// duplicate detection becomes the object's lookup index, so QueryPath can jump
+	// straight to a key without the keys having to be sorted.
+	return newObject(properties, seen, p.nextToken), nil
 }
 
 func (p *Parser) nextToken() {

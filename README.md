@@ -252,13 +252,17 @@ Below are examples of how to `parse`, `traverse` and `retrieve` values from the 
 
 ### Object
 - `Objects` are stored as a `slice` of `jsonvx.KeyValue` struct.
-- keys are stored as `[]byte` and `sorted` `lexicographically` for `log(n)` value retrieval.
+- Keys keep the order they were written in the input. `ForEach`, `Keys()` and `String()` all follow that order, which matters for formatters and linters. Use `sort.Strings(obj.Keys())` if you want alphabetical order.
+- keys are stored as `[]byte`. Each object also keeps a lookup table from key to position, so `QueryPath` jumps straight to a key instead of searching for it.
 - values are stored as `jsonvx.JSON`
-- Each key-value pair is accessible using the `ForEach` method.
+- Each key-value pair is accessible using the `ForEach` method, and `Keys()` returns the keys as `[]string`.
+- `Equal` compares objects by key, so key order does not affect it.
 - Mixed value types (e.g., `numbers`, `strings`, `objects`) are obviously supported.
 - Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. `{"a": 1, "a": 2}` is stored as `{"a": 2}`, so `Len()`, `ForEach` and `QueryPath` all see each key once. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` are the same key. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
 
-> **Changed in v1.1.0:** before v1.1.0, duplicate keys were all kept and `QueryPath` was documented to return the first one. That was not reliable for larger objects, because the key sort did not keep equal keys in order.
+> **Changed in v1.1.0:** before v1.1.0, duplicate keys were all kept and `QueryPath` was documented to return the first one. That was not reliable for larger objects, because the key sort did not keep equal keys in order. A repeated key now keeps the position where it first appeared, with the last value, as in JavaScript.
+>
+> **Changed in v1.1.0:** before v1.1.0, keys were sorted alphabetically, so `ForEach` and `String()` did not follow the input. They now keep the input order.
 
 This example shows how to parse a `JSON` object using `jsonvx`, cast it to an `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
 
@@ -281,6 +285,10 @@ if !ok {
 objNode.ForEach(func(key []byte, value jsonvx.JSON, object *jsonvx.Object) {
 	fmt.Printf("Key: %s, Value: %v\n", string(key), value)
 })
+// Key: name, Value: Alice
+// Key: age, Value: 30
+
+fmt.Println(objNode.Keys()) // [name age]
 ```
 
 ### Array

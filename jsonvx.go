@@ -41,7 +41,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -474,17 +473,53 @@ func (kv *KeyValue) Equal(kv2 *KeyValue) bool {
 }
 
 // Object represents a JSON object.
+//
+// Properties are kept in the order they appear in the input. A repeated key keeps
+// the position where it first appeared and holds the last value written for it.
 type Object struct {
 	Properties []KeyValue
+
+	// index maps each key to its position in Properties, so lookups do not have to
+	// search. It is built by the parser. If it is nil, or no longer matches
+	// Properties because the slice was changed, lookups fall back to a linear scan.
+	index map[string]int
 }
 
 // newObject creates a new *Object value, optionally invoking a callback
-func newObject(properties []KeyValue, cb func()) *Object {
+func newObject(properties []KeyValue, index map[string]int, cb func()) *Object {
 	if cb != nil {
 		cb()
 	}
 
-	return &Object{Properties: properties}
+	return &Object{Properties: properties, index: index}
+}
+
+// lookup returns the position of key in Properties, or -1 if it is not present.
+func (o *Object) lookup(key []byte) int {
+	if i, ok := o.index[string(key)]; ok && i < len(o.Properties) && bytes.Equal(o.Properties[i].key, key) {
+		return i
+	}
+
+	// No usable index: scan from the end, so the last copy of a repeated key wins,
+	// matching how the parser resolves duplicates.
+	for i := len(o.Properties) - 1; i >= 0; i-- {
+		if bytes.Equal(o.Properties[i].key, key) {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// Keys returns the object's keys in the order they appear in the input.
+// Use sort.Strings on the result for alphabetical order.
+func (o *Object) Keys() []string {
+	keys := make([]string, len(o.Properties))
+	for i, prop := range o.Properties {
+		keys[i] = string(prop.key)
+	}
+
+	return keys
 }
 
 func (o *Object) String() string {
@@ -513,13 +548,9 @@ func (o *Object) QueryPath(paths ...string) (JSON, error) {
 	}
 
 	keyStr := paths[0]
-	keyBytes := []byte(keyStr)
 
-	index := sort.Search(len(o.Properties), func(i int) bool {
-		return bytes.Compare(o.Properties[i].key, keyBytes) >= 0
-	})
-
-	if index >= o.Len() || !bytes.Equal(o.Properties[index].key, keyBytes) {
+	index := o.lookup([]byte(keyStr))
+	if index < 0 {
 		return nil, fmt.Errorf("key not found: %q", keyStr)
 	}
 
@@ -547,7 +578,8 @@ func (o *Object) QueryPath(paths ...string) (JSON, error) {
 // - object: the object being iterated
 type ObjectCallback func(key []byte, value JSON, object *Object)
 
-// ForEach calls the given callback for each key-value pair in the object.
+// ForEach calls the given callback for each key-value pair in the object,
+// in the order they appear in the input.
 // It provides the key, value, and the object itself.
 func (o *Object) ForEach(cb ObjectCallback) {
 	for _, prop := range o.Properties {
@@ -555,10 +587,16 @@ func (o *Object) ForEach(cb ObjectCallback) {
 	}
 }
 
+// Equal reports whether o2 is an object with the same keys and equal values.
+// Key order does not matter.
 func (o *Object) Equal(o2 JSON) bool {
+	if o == nil || o2 == nil {
+		return JSON(o) == o2
+	}
+
 	other, ok := AsObject(o2)
 
-	if !ok {
+	if !ok || other == nil {
 		return false
 	}
 
@@ -566,9 +604,13 @@ func (o *Object) Equal(o2 JSON) bool {
 		return false
 	}
 
-	for i, prop := range o.Properties {
-		prop2 := other.Properties[i]
+	for _, prop := range o.Properties {
+		i := other.lookup(prop.key)
+		if i < 0 {
+			return false
+		}
 
+		prop2 := other.Properties[i]
 		if !prop.Equal(&prop2) {
 			return false
 		}

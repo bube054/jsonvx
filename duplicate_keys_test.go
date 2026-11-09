@@ -79,7 +79,8 @@ func TestDuplicateKeysForEachSeesEachKeyOnce(t *testing.T) {
 		visited = append(visited, fmt.Sprintf("%s=%v", key, value))
 	})
 
-	expected := []string{"a=4", "b=3"}
+	// Each key keeps the position where it first appeared, with its last value.
+	expected := []string{"b=3", "a=4"}
 	if strings.Join(visited, ",") != strings.Join(expected, ",") {
 		t.Errorf("ForEach visited %v, expected %v", visited, expected)
 	}

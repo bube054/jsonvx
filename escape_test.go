@@ -204,8 +204,8 @@ func TestQueryPathDecodedKeys(t *testing.T) {
 	}
 }
 
-func TestObjectKeysSortedByDecodedValue(t *testing.T) {
-	// "\u0061" is "a", so it must sort before "b" even though '\' sorts after 'b'.
+func TestObjectKeysDecodedInOriginalOrder(t *testing.T) {
+	// Keys are decoded but keep their written order: "b" first, then "\u0061" as "a".
 	parser := NewParser([]byte(`{"b": 2, "\u0061": 1}`), nil)
 	node, err := parser.Parse()
 	if err != nil {
@@ -216,8 +216,8 @@ func TestObjectKeysSortedByDecodedValue(t *testing.T) {
 	var keys []string
 	obj.ForEach(func(key []byte, _ JSON, _ *Object) { keys = append(keys, string(key)) })
 
-	if len(keys) != 2 || keys[0] != "a" || keys[1] != "b" {
-		t.Errorf("got keys %q, expected [a b]", keys)
+	if len(keys) != 2 || keys[0] != "b" || keys[1] != "a" {
+		t.Errorf("got keys %q, expected [b a]", keys)
 	}
 }
 
