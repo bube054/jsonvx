@@ -2,11 +2,11 @@
 
 `jsonvx` is a highly configurable `JSON` `parser`, `querier`, and `formatter` for Go.
 
-It supports both strict `JSON` (as defined by [ECMA-404](https://datatracker.ietf.org/doc/html/rfc7159)) and up to a more relaxed variant such as [JSON5](https://json5.org/). This makes it ideal for parsing user-generated data, configuration files, or legacy formats that don't fully comply with the JSON specification.
+It supports both strict `JSON` (as defined by [ECMA-404](https://ecma-international.org/publications-and-standards/standards/ecma-404/)) and up to a more relaxed variant such as [JSON5](https://json5.org/). This makes it ideal for parsing user-generated data, configuration files, or legacy formats that don't fully comply with the JSON specification.
 
 With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives you fine-grained control over how `JSON` is parsed. You can enable or disable features like:
 
-- [Hexadecimal numbers `(0xFF)`](#allowextraws)
+- [Hexadecimal numbers `(0xFF)`](#allowhexnumbers)
 - [`NaN` and `Infinity` as numeric values](#allownan)
 - [Leading plus signs in numbers `(+42)`](#allowleadingplus)
 - [Decimal edge cases like `.5` or `5.`](#allowpointedgenumbers)
@@ -18,6 +18,8 @@ With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives y
 - [Line comments `(// comment)` and Block comments `(/* comment */)`](#allowlinecomments)
 - [Extra whitespace in unusual places](#allowextraws)
 - [Enable `JSON5`](#allowjson5)
+
+It also guards against hostile input with a [nesting depth limit](#maxdepth), on by default, so deeply nested data returns an error instead of crashing your program.
 
 After parsing, `jsonvx` gives you a clean abstract syntax tree `(AST)` that you can either traverse manually or query using the built-in API. Each node in the tree implements a common `JSON interface`, so you can safely `inspect`, `transform`, or `stringify` data as needed.
 
@@ -124,7 +126,7 @@ numNode, _ := rootObj.QueryPath("friends", "2", "age") // => 47
 
 ## Configuring The Parser
 
-You can configure the `Parser` using the functional options pattern, allowing you to enable relaxed JSON features individually. By default, the parser is strict (all options disabled), matching the [ECMA-404](https://datatracker.ietf.org/doc/html/rfc7159) specification. To allow non-standard or user-friendly formats (like [JSON5](https://json5.org)), pass options when creating the config:
+You can configure the `Parser` using the functional options pattern, allowing you to enable relaxed JSON features individually. By default, the parser is strict (all options disabled), matching the [ECMA-404](https://ecma-international.org/publications-and-standards/standards/ecma-404/) specification. To allow non-standard or user-friendly formats (like [JSON5](https://json5.org)), pass options when creating the config:
 
   ### `AllowExtraWS`:
   Allows extra whitespace characters that are not normally permitted by strict `JSON`.
@@ -237,6 +239,13 @@ No \\n's!",
   "backwardsCompatible": "with JSON",
 }
 `), jsonvx.JSON5Config())
+  ```
+  ### `MaxDepth`:
+  Sets the maximum nesting depth of arrays and objects (default `1000`, see `jsonvx.DefaultMaxDepth`). Deeper input fails with `ErrJSONTooDeep` instead of overflowing the stack, which would crash the whole program. This applies to every config, including `JSON5Config()`. A value of `0` or less uses the default.
+  ```go
+  cfg := jsonvx.NewParserConfig(jsonvx.WithMaxDepth(2))
+  parser := jsonvx.NewParser([]byte(`[[1]]`), cfg)   // valid, depth 2
+  parser := jsonvx.NewParser([]byte(`[[[1]]]`), cfg) // error: JSON nesting too deep: "[" exceeds maximum depth of 2 at line 1, column 3
   ```
 
 ## Parsing behavior

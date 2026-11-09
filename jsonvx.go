@@ -20,6 +20,10 @@
 //   - Extra whitespace in unusual places
 //   - Enable JSON5
 //
+// It also guards against hostile input with a nesting depth limit ([ParserConfig.MaxDepth],
+// [DefaultMaxDepth] by default), so deeply nested data returns [ErrJSONTooDeep] instead of
+// crashing your program.
+//
 // After parsing, jsonvx gives you a clean abstract syntax tree (AST) that you can either traverse manually
 // or query using the built-in API. Each node in the tree implements a common JSON interface, so you can safely
 // inspect, transform, or stringify data as needed.
@@ -31,7 +35,7 @@
 // If you need full control over how JSON is interpreted and a structured way to work with the result,
 // jsonvx is for you.
 //
-// [ECMA-404]: https://datatracker.ietf.org/doc/html/rfc7159
+// [ECMA-404]: https://ecma-international.org/publications-and-standards/standards/ecma-404/
 // [JSON5]: https://json5.org/
 package jsonvx
 
