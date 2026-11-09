@@ -260,12 +260,21 @@ func (n *Number) Value() (float64, error) {
 	}
 
 	switch n.Token.SubKind {
-	case INTEGER, HEX:
+	case INTEGER:
 		numVal, err := ToInt(n.Token.Literal)
 		if err != nil {
 			return 0, ErrNotNumber
 		}
 		return float64(numVal), nil
+	case HEX:
+		// Hex literals (e.g. 0x1F, -0xFF) can have any number of digits. Like other
+		// numbers, values too long for float64 to hold exactly are rounded to the
+		// nearest float64; values beyond float64's range are an error.
+		floatVal, ok := hexToFloat64(n.Token.Literal)
+		if !ok || math.IsInf(floatVal, 0) {
+			return 0, ErrNotNumber
+		}
+		return floatVal, nil
 	case FLOAT, SCI_NOT:
 		numVal, err := ToFloat(n.Token.Literal)
 		if err != nil {

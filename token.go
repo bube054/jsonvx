@@ -213,9 +213,20 @@ func (t *Token) Value() any {
 		}
 	case NUMBER:
 		switch t.SubKind {
-		case INTEGER, HEX:
+		case INTEGER:
 			val, _ := ToInt(t.Literal)
 			return val
+		case HEX:
+			// int64 when it fits, like INTEGER; otherwise the nearest float64.
+			val, ok := hexToBigInt(t.Literal)
+			if !ok {
+				return nil
+			}
+			if val.IsInt64() {
+				return val.Int64()
+			}
+			floatVal, _ := hexToFloat64(t.Literal)
+			return floatVal
 		case FLOAT, SCI_NOT:
 			val, _ := ToFloat(t.Literal)
 			return val

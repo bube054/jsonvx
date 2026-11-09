@@ -136,11 +136,17 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   parser := jsonvx.NewParser([]byte("{\"key\":\u00A0\"value\"}"), cfg) // valid No-Break Space
   ```
   ### `AllowHexNumbers`:
-  Enables support for hexadecimal numeric literals (e.g., `0x1F`).
+  Enables support for hexadecimal numeric literals (e.g., `0x1F`). Upper and lower case work (`0xff`, `0XFF`), as do negative numbers (`-0x10`) and, with [`AllowLeadingPlus`](#allowleadingplus), a leading plus. `Value()` returns the number as a `float64`; like decimal numbers, hex numbers longer than about 16 digits are rounded to the nearest `float64`.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowHexNumbers(true))
   parser := jsonvx.NewParser([]byte("0x1F"), cfg) // valid 31 in hex
+
+  node, _ := parser.Parse()
+  num, _ := jsonvx.AsNumber(node)
+  value, _ := num.Value() // 31
   ```
+
+  > **Fixed in v1.1.0:** before v1.1.0, hex numbers parsed but `Value()` always returned an error.
   ### `AllowPointEdgeNumbers`:
   Allows numbers like `.5` or `5.` without requiring a digit before/after the decimal point.
   ```go

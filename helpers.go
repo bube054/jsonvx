@@ -2,6 +2,7 @@ package jsonvx
 
 import (
 	"bytes"
+	"math/big"
 	"strconv"
 	"unicode"
 )
@@ -296,4 +297,55 @@ func ToInt(input []byte) (int64, error) {
 
 func ToFloat(input []byte) (float64, error) {
 	return strconv.ParseFloat(string(input), 64)
+}
+
+// hexToBigInt converts a hexadecimal literal such as 0x1F, 0XFF, -0x10 or +0x10
+// to its exact integer value, however many digits it has. It reports false if
+// input is not a well-formed hex literal.
+func hexToBigInt(input []byte) (*big.Int, bool) {
+	negative := false
+
+	switch {
+	case bytes.HasPrefix(input, []byte("-")):
+		negative = true
+		input = input[1:]
+	case bytes.HasPrefix(input, []byte("+")):
+		input = input[1:]
+	}
+
+	if len(input) < 3 || input[0] != '0' || (input[1] != 'x' && input[1] != 'X') {
+		return nil, false
+	}
+
+	digits := input[2:]
+
+	// big.Int.SetString would also accept a sign here ("0x-5"), so check the digits first.
+	for _, b := range digits {
+		if !isDigit(b) && !isHexLetter(b) {
+			return nil, false
+		}
+	}
+
+	n, ok := new(big.Int).SetString(string(digits), 16)
+	if !ok {
+		return nil, false
+	}
+
+	if negative {
+		n.Neg(n)
+	}
+
+	return n, true
+}
+
+// hexToFloat64 converts a hexadecimal literal to the nearest float64. Values beyond
+// float64's range become ±Inf; it reports false if input is not a hex literal.
+func hexToFloat64(input []byte) (float64, bool) {
+	n, ok := hexToBigInt(input)
+	if !ok {
+		return 0, false
+	}
+
+	f, _ := new(big.Float).SetInt(n).Float64()
+	return f, true
 }
