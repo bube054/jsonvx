@@ -204,9 +204,23 @@ func isInf(input []byte) bool {
 }
 
 func isInteger(input []byte) bool {
-	_, err := strconv.ParseInt(string(input), 10, 64)
+	// Decide by the characters (an optional sign, then digits), not by whether the
+	// value fits in an int64, so whole numbers of any size are integers.
+	if len(input) > 0 && (input[0] == '+' || input[0] == '-') {
+		input = input[1:]
+	}
 
-	return err == nil
+	if len(input) == 0 {
+		return false
+	}
+
+	for _, b := range input {
+		if !isDigit(b) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func isFloat(input []byte) bool {

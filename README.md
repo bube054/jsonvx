@@ -341,8 +341,12 @@ fmt.Println(strValue) // Output: Hello, World!
 ### Number
 
 - JSON numbers are parsed as a `jsonvx.Number`.
-- `Value()` returns the raw Go `float64` value.
-- `Integer`, `Float`, `SciNot`, `Hex`, `Infinity` and ironically `NaN` number types are supported.
+- `Value()` returns the number as a Go `float64`. A `float64` holds about 16 significant digits, so longer numbers are rounded: `9007199254740993` becomes `9007199254740992`.
+- When every digit matters, such as for IDs, use the exact methods instead:
+  - `Int64()` returns an exact `int64`. It returns `ErrNotInteger` for numbers written with a decimal point or exponent (`1.5`, `1.0`, `1e3`), and `ErrNumberOutOfRange` for whole numbers that don't fit in an `int64`.
+  - `BigInt()` returns an exact `*big.Int` for whole numbers of any size.
+  - `Raw()` returns the number exactly as written, such as `"1.50"` or `"0x1F"`.
+- `Integer`, `Float`, `SciNot`, `Hex`, `Infinity` and ironically `NaN` number types are supported. Whole numbers of any length are `Integer`.
 
 This example demonstrates how to parse a `JSON` `number` using `jsonvx`, cast it to an `jsonvx.Number` node, and get `float64` its value using the built-in `Value` method.
 
@@ -369,6 +373,23 @@ if err != nil {
 
 fmt.Println(numValue) // Output: 123456
 ```
+
+For large IDs, `Value()` rounds while `Int64()`, `BigInt()` and `Raw()` keep every digit:
+
+```go
+parser := jsonvx.NewParser([]byte(`{"user_id": 9007199254740993}`), nil)
+node, _ := parser.Parse()
+obj, _ := jsonvx.AsObject(node)
+idNode, _ := obj.QueryPath("user_id")
+id, _ := jsonvx.AsNumber(idNode)
+
+approx, _ := id.Value() // 9.007199254740992e+15 (rounded)
+exact, _ := id.Int64()  // 9007199254740993
+big, _ := id.BigInt()   // 9007199254740993
+raw, _ := id.Raw()      // "9007199254740993"
+```
+
+> **Changed in v1.1.0:** `Int64()`, `BigInt()` and `Raw()` are new. Whole numbers too large for an `int64` are now classified as `Integer` instead of `Float` (their `Value()` is unchanged), and whole numbers too long for a `float64` now parse instead of being rejected.
 
 ### Boolean
 

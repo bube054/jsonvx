@@ -214,7 +214,11 @@ func (t *Token) Value() any {
 	case NUMBER:
 		switch t.SubKind {
 		case INTEGER:
-			val, _ := ToInt(t.Literal)
+			// int64 when it fits; otherwise the nearest float64.
+			if val, err := ToInt(t.Literal); err == nil {
+				return val
+			}
+			val, _ := ToFloat(t.Literal)
 			return val
 		case HEX:
 			// int64 when it fits, like INTEGER; otherwise the nearest float64.

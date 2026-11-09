@@ -253,7 +253,11 @@ func (n *Number) String() string {
 	return string((n.Token.Literal))
 }
 
-// Value attempts to parse the number as float64, depending on its subtype.
+// Value returns the number as a float64, depending on its subtype.
+//
+// A float64 holds about 16 significant digits, so longer numbers are rounded to the
+// nearest float64: 9007199254740993 becomes 9007199254740992. When every digit
+// matters, such as for IDs, use Int64, BigInt or Raw instead.
 func (n *Number) Value() (float64, error) {
 	if n.Token == nil {
 		return 0, ErrNotNumber
@@ -262,10 +266,15 @@ func (n *Number) Value() (float64, error) {
 	switch n.Token.SubKind {
 	case INTEGER:
 		numVal, err := ToInt(n.Token.Literal)
+		if err == nil {
+			return float64(numVal), nil
+		}
+		// Too large for int64: use the nearest float64. Int64 and BigInt give exact values.
+		floatVal, err := ToFloat(n.Token.Literal)
 		if err != nil {
 			return 0, ErrNotNumber
 		}
-		return float64(numVal), nil
+		return floatVal, nil
 	case HEX:
 		// Hex literals (e.g. 0x1F, -0xFF) can have any number of digits. Like other
 		// numbers, values too long for float64 to hold exactly are rounded to the
