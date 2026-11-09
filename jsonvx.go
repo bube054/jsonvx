@@ -18,6 +18,7 @@
 //   - Trailing commas in arrays or objects
 //   - Line comments (// comment) and Block comments (/* comment */)
 //   - Extra whitespace in unusual places
+//   - Rejecting duplicate object keys (by default the last value wins)
 //   - Enable JSON5
 //
 // After parsing, jsonvx gives you a clean abstract syntax tree (AST) that you can either traverse manually

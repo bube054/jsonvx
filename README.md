@@ -17,6 +17,7 @@ With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives y
 - [Trailing commas in arrays or objects](#allowtrailingcommaarray)
 - [Line comments `(// comment)` and Block comments `(/* comment */)`](#allowlinecomments)
 - [Extra whitespace in unusual places](#allowextraws)
+- [Rejecting duplicate object keys](#disallowduplicatekeys)
 - [Enable `JSON5`](#allowjson5)
 
 After parsing, `jsonvx` gives you a clean abstract syntax tree `(AST)` that you can either traverse manually or query using the built-in API. Each node in the tree implements a common `JSON interface`, so you can safely `inspect`, `transform`, or `stringify` data as needed.
@@ -220,6 +221,13 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowBlockComments(true))
   parser := jsonvx.NewParser([]byte(`/* comment */ 123`), cfg)
   ```
+  ### `DisallowDuplicateKeys`:
+  Rejects objects that repeat a key with `ErrJSONDuplicateKey`, reporting where the duplicate is. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` count as the same key. When disabled (the default), the last value for a repeated key wins. Useful for linters and validators, where a repeated key is usually a mistake.
+  ```go
+  cfg := jsonvx.NewParserConfig(jsonvx.WithDisallowDuplicateKeys(true))
+  parser := jsonvx.NewParser([]byte(`{"a": 1, "b": 2}`), cfg) // valid, keys are unique
+  parser := jsonvx.NewParser([]byte(`{"a": 1, "a": 2}`), cfg) // error: duplicate key in JSON object: "a" at line 1, column 10
+  ```
   ### `AllowJSON5`:
   Enables the use of [`JSON5`](https://json5.org) syntax.
   ```go
@@ -248,7 +256,9 @@ Below are examples of how to `parse`, `traverse` and `retrieve` values from the 
 - values are stored as `jsonvx.JSON`
 - Each key-value pair is accessible using the `ForEach` method.
 - Mixed value types (e.g., `numbers`, `strings`, `objects`) are obviously supported.
-- Duplicate keys are included, but the first key-value pair is gotten with the `QueryPath` method.
+- Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. `{"a": 1, "a": 2}` is stored as `{"a": 2}`, so `Len()`, `ForEach` and `QueryPath` all see each key once. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` are the same key. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
+
+> **Changed in v1.1.0:** before v1.1.0, duplicate keys were all kept and `QueryPath` was documented to return the first one. That was not reliable for larger objects, because the key sort did not keep equal keys in order.
 
 This example shows how to parse a `JSON` object using `jsonvx`, cast it to an `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
 

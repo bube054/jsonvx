@@ -10,6 +10,7 @@ import (
 var (
 	ErrJSONSyntax          = errors.New("JSON syntax error")
 	ErrJSONUnexpectedChar  = errors.New("unexpected character in JSON input")
+	ErrJSONDuplicateKey    = errors.New("duplicate key in JSON object")
 	ErrJSONNoContent       = errors.New("no meaningful content to parse")
 	ErrJSONMultipleContent = errors.New("multiple JSON values")
 )
@@ -181,6 +182,8 @@ func (p *Parser) parseObject() (JSON, error) {
 
 	p.ignoreWhitespacesOrComments()
 
+	var seen map[string]int // decoded key -> its index in properties, created on the first key
+
 	for !p.expectCurToken(RIGHT_CURLY_BRACE) {
 		keyToken := p.curToken
 		jsonKey, err := p.parse()
@@ -236,7 +239,23 @@ func (p *Parser) parseObject() (JSON, error) {
 			keySlice = []byte(unescapeString(stringContent(key)))
 		}
 
-		properties = append(properties, KeyValue{key: keySlice, value: value})
+		// A repeated key either fails (DisallowDuplicateKeys) or replaces the earlier
+		// value, so the last one wins and each key appears only once in the object.
+		// Removing duplicates here also means no equal keys ever reach the sort below.
+		if seen == nil {
+			seen = make(map[string]int)
+		}
+
+		if i, dup := seen[string(keySlice)]; dup {
+			if p.config.DisallowDuplicateKeys {
+				return nil, WrapJSONDuplicateKeyError(keyToken, keySlice)
+			}
+
+			properties[i].value = value
+		} else {
+			seen[string(keySlice)] = len(properties)
+			properties = append(properties, KeyValue{key: keySlice, value: value})
+		}
 
 		hasComma := p.expectCurToken(COMMA)
 		isClosingBracket := p.expectCurToken(RIGHT_CURLY_BRACE)
@@ -346,6 +365,15 @@ func WrapJSONMultipleContentError(token Token) error {
 	return fmt.Errorf("%w: extra value %q at line %d, column %d",
 		ErrJSONMultipleContent,
 		token.Literal,
+		token.Line,
+		token.Column,
+	)
+}
+
+func WrapJSONDuplicateKeyError(token Token, key []byte) error {
+	return fmt.Errorf("%w: %q at line %d, column %d",
+		ErrJSONDuplicateKey,
+		key,
 		token.Line,
 		token.Column,
 	)

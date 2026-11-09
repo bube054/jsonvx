@@ -31,6 +31,14 @@ type ParserConfig struct {
 	AllowTrailingCommaArray  bool // AllowTrailingCommaArray permits a trailing comma in array literals (e.g., `[1, 2, ]`).
 	AllowTrailingCommaObject bool // AllowTrailingCommaObject permits a trailing comma in object literals (e.g., `{"a": 1,}`).
 
+	// DisallowDuplicateKeys rejects objects that repeat a key, such as {"a": 1, "a": 2},
+	// with ErrJSONDuplicateKey. Keys are compared after decoding escapes, so "a" and
+	// "\u0061" count as the same key.
+	//
+	// When false (the default), the last value for a repeated key wins, matching
+	// encoding/json, JavaScript's JSON.parse and the JSON5 spec.
+	DisallowDuplicateKeys bool
+
 	AllowLineComments  bool // AllowLineComments enables the use of single-line comments (// ...).
 	AllowBlockComments bool // AllowBlockComments enables the use of block comments (/* ... */).
 }
@@ -69,6 +77,7 @@ func (c *ParserConfig) String() string {
 		{"AllowOtherEscapeChars", c.AllowOtherEscapeChars},
 		{"AllowTrailingCommaArray", c.AllowTrailingCommaArray},
 		{"AllowTrailingCommaObject", c.AllowTrailingCommaObject},
+		{"DisallowDuplicateKeys", c.DisallowDuplicateKeys},
 		{"AllowLineComments", c.AllowLineComments},
 		{"AllowBlockComments", c.AllowBlockComments},
 	}
@@ -153,6 +162,14 @@ func WithAllowTrailingCommaArray(allow bool) func(*ParserConfig) {
 func WithAllowTrailingCommaObject(allow bool) func(*ParserConfig) {
 	return func(c *ParserConfig) {
 		c.AllowTrailingCommaObject = allow
+	}
+}
+
+// WithDisallowDuplicateKeys sets whether objects that repeat a key are rejected
+// with ErrJSONDuplicateKey instead of letting the last value win.
+func WithDisallowDuplicateKeys(disallow bool) func(*ParserConfig) {
+	return func(c *ParserConfig) {
+		c.DisallowDuplicateKeys = disallow
 	}
 }
 
