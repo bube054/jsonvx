@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo-wordmark.svg" alt="jsonvx logo" width="420">
+</p>
+
 # JSONVX
 
 `jsonvx` is a highly configurable `JSON` `parser` and `querier` for Go.
@@ -55,15 +59,16 @@ import (
 )
 
 func main() {
+	// bube's favourite isekais, ranked.
 	data := []byte(`{
-		"name": {"first": "Tom", "last": "Anderson"},
-		"age": 37,
-		"children": ["Sara", "Alex", "Jack"],
-		"fav.movie": "Deer Hunter",
-		"friends": [
-			{"first": "Dale", "last": "Murphy", "age": 44, "nets": ["ig", "fb", "tw"]},
-			{"first": "Roger", "last": "Craig", "age": 68, "nets": ["fb", "tw"]},
-			{"first": "Jane", "last": "Murphy", "age": 47, "nets": ["ig", "tw"]}
+		"fan": "bube",
+		"count": 3,
+		"genres": ["isekai", "fantasy", "comedy"],
+		"best.of.all": "Re:Zero",
+		"isekais": [
+			{"rank": 1, "title": "Re:Zero", "hero": {"first": "Subaru", "last": "Natsuki"}, "party": ["Emilia", "Rem", "Ram", "Beatrice"]},
+			{"rank": 2, "title": "Mushoku Tensei", "hero": {"first": "Rudeus", "last": "Greyrat"}, "party": ["Roxy", "Sylphiette", "Eris"]},
+			{"rank": 3, "title": "KonoSuba", "hero": {"first": "Kazuma", "last": "Satou"}, "party": ["Aqua", "Megumin", "Darkness"]}
 		]
 	}`)
 
@@ -79,22 +84,22 @@ func main() {
 		panic("expected root node to be an object")
 	}
 
-	ageNode, err := rootObj.QueryPath("age")
+	countNode, err := rootObj.QueryPath("count")
 	if err != nil {
-		panic(fmt.Sprintf("failed to query 'age' field: %s", err))
+		panic(fmt.Sprintf("failed to query 'count' field: %s", err))
 	}
 
-	ageNum, ok := jsonvx.AsNumber(ageNode)
+	countNum, ok := jsonvx.AsNumber(countNode)
 	if !ok {
-		panic("expected 'age' to be a number")
+		panic("expected 'count' to be a number")
 	}
 
-	ageValue, err := ageNum.Value()
+	countValue, err := countNum.Value()
 	if err != nil {
-		panic(fmt.Sprintf("failed to convert 'age' to numeric value: %s", err))
+		panic(fmt.Sprintf("failed to convert 'count' to numeric value: %s", err))
 	}
 
-	fmt.Println(ageValue) // 37
+	fmt.Println(countValue) // 3
 }
 ```
 
@@ -105,29 +110,29 @@ Access deeply nested fields in your parsed `JSON` `array` or `object` structure 
 Using the `json` data above, we can query for specific values using the `QueryPath` method:
 
 ```go
-// Get first name
-strNode, _ := rootObj.QueryPath("name", "first") // => "Tom"
+// Get the title of the number one isekai
+strNode, _ := rootObj.QueryPath("isekais", "0", "title") // => "Re:Zero"
 
-// get children array
-arrayNode, _ := rootObj.QueryPath("children") // => ["Sara", "Alex", "Jack"]
+// Get the genres array
+arrayNode, _ := rootObj.QueryPath("genres") // => ["isekai", "fantasy", "comedy"]
 
-// Get second child
-strNode, _ = rootObj.QueryPath("children", "1") // => "Alex"
+// Get the second genre
+strNode, _ = rootObj.QueryPath("genres", "1") // => "fantasy"
 
-// Get favorite movie (with dot in key name)
-strNode, _ = rootObj.QueryPath("fav.movie") // => "Deer Hunter"
+// Get the best of all (with dots in the key name)
+strNode, _ = rootObj.QueryPath("best.of.all") // => "Re:Zero"
 
-// Get first friend object
-objNode, _ := rootObj.QueryPath("friends", "0") // => {"first": "Dale", "last": "Murphy", "age": 44, "nets": ["ig", "fb", "tw"]}
+// Get the second isekai
+objNode, _ := rootObj.QueryPath("isekais", "1") // => {"rank": 2, "title": "Mushoku Tensei", "hero": {"first": "Rudeus", "last": "Greyrat"}, "party": ["Roxy", "Sylphiette", "Eris"]}
 
-// Get last name of first friend
-strNode, _ = rootObj.QueryPath("friends", "0", "last") // => "Murphy"
+// Get the last name of the second isekai's hero
+strNode, _ = rootObj.QueryPath("isekais", "1", "hero", "last") // => "Greyrat"
 
-// Get second social network of second friend
-strNode, _ = rootObj.QueryPath("friends", "1", "nets", "1") // => "tw"
+// Get the second party member of the third isekai
+strNode, _ = rootObj.QueryPath("isekais", "2", "party", "1") // => "Megumin"
 
-// Get age of third friend
-numNode, _ := rootObj.QueryPath("friends", "2", "age") // => 47
+// Get the rank of the third isekai
+numNode, _ := rootObj.QueryPath("isekais", "2", "rank") // => 3
 ```
 
 ## Configuring The Parser
@@ -138,8 +143,8 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   Allows extra whitespace characters that are not normally permitted by strict `JSON`.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowExtraWS(true))
-  parser := jsonvx.NewParser([]byte("{\"key\":\v\"value\"}"), cfg) // valid Vertical Tab
-  parser := jsonvx.NewParser([]byte("{\"key\":\f\"value\"}"), cfg) // valid Form Feed
+  parser := jsonvx.NewParser([]byte("{\"hero\":\v\"Subaru\"}"), cfg) // valid Vertical Tab
+  parser := jsonvx.NewParser([]byte("{\"hero\":\f\"Subaru\"}"), cfg) // valid Form Feed
   parser := jsonvx.NewParser([]byte("{\"key\":\u0085\"value\"}"), cfg) // valid Next Line
   parser := jsonvx.NewParser([]byte("{\"key\":\u00A0\"value\"}"), cfg) // valid No-Break Space
   ```
@@ -182,39 +187,39 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   Permits a leading '+' in numbers (e.g., `+42`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowLeadingPlus(true))
-  parser := jsonvx.NewParser([]byte("+99"), cfg) // valid positive number
+  parser := jsonvx.NewParser([]byte("+9999"), cfg) // valid positive number (EXPLOSION!)
   ```
   ### `AllowUnquoted`:
-  Enables parsing of unquoted object keys (e.g., `{foo: "bar"}`)
+  Enables parsing of unquoted object keys (e.g., `{hero: "Kazuma"}`)
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowUnquoted(true))
-  parser := jsonvx.NewParser([]byte(`{foo: "bar"}`), cfg) // valid only for unquoted keys and not for unquoted values
+  parser := jsonvx.NewParser([]byte(`{hero: "Kazuma"}`), cfg) // valid only for unquoted keys and not for unquoted values
   ```
   ### `AllowSingleQuotes`:
   Allows strings to be enclosed in single quotes (`' '`) in addition to double quotes.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowSingleQuotes(true))
-  parser := jsonvx.NewParser([]byte(`{'name': 'Tom'}`), cfg) // valid single-quoted string
+  parser := jsonvx.NewParser([]byte(`{'name': 'Megumin'}`), cfg) // valid single-quoted string
   ```
   ### `AllowNewlineInStrings`:
   Permits multiple new line characters (`\n`) being escaped.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowNewlineInStrings(true))
-  parser := jsonvx.NewParser([]byte(`"hello \
-   world"`), cfg) // valid escaped new line
+  parser := jsonvx.NewParser([]byte(`"Starting life in \
+another world"`), cfg) // valid escaped new line
   ```
   ### `AllowOtherEscapeChars`:
   Enables support for escape sequences other than `\\`, `\/`, `\b`, `\n`, `\f`, `\r`, `\t` and Unicode escapes (`\uXXXX`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowOtherEscapeChars(true))
-  parser := jsonvx.NewParser([]byte(`"hello\qworld"`), cfg) // valid other escape character
+  parser := jsonvx.NewParser([]byte(`"another\qworld"`), cfg) // valid other escape character
   ```
   ### `AllowControlCharsInStrings`:
   Allows raw control characters (bytes `0x00`-`0x1F`, such as a tab) inside strings, as `JSON5` does. Strict `JSON` requires them to be escaped (`\t`). Raw line breaks are never allowed inside strings, in `JSON` or `JSON5`; use [`AllowNewlineInStrings`](#allownewlineinstrings) for an escaped line break.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowControlCharsInStrings(true))
-  parser := jsonvx.NewParser([]byte("\"a\tb\""), cfg)  // valid, raw tab inside the string
-  parser := jsonvx.NewParser([]byte("\"a\nb\""), cfg)  // invalid, raw line break inside the string
+  parser := jsonvx.NewParser([]byte("\"Rem\tRam\""), cfg) // valid, raw tab inside the string
+  parser := jsonvx.NewParser([]byte("\"Rem\nRam\""), cfg) // invalid, raw line break inside the string
   ```
 
   > **Changed in v1.2.0:** before v1.2.0, strict mode accepted raw control characters inside strings. If you relied on that, enable this option.
@@ -222,49 +227,49 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   Permits a trailing comma in array literals (e.g., `[1, 2, ]`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowTrailingCommaArray(true))
-  parser := jsonvx.NewParser([]byte(`[1, 2, 3, ]`), cfg) // valid array with trailing comma
+  parser := jsonvx.NewParser([]byte(`["Aqua", "Megumin", "Darkness", ]`), cfg) // valid array with trailing comma
   ```
   ### `AllowTrailingCommaObject`:
-  Permits a trailing comma in object literals (e.g., `{"a": 1,}`).
+  Permits a trailing comma in object literals (e.g., `{"rank": 1,}`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowTrailingCommaObject(true))
-  parser := jsonvx.NewParser([]byte(`{"a": 1,}`), cfg) // valid object with trailing comma
+  parser := jsonvx.NewParser([]byte(`{"rank": 1,}`), cfg) // valid object with trailing comma
   ```
   ### `AllowLineComments`:
   Enables the use of single-line comments (// ...).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowLineComments(true))
-  parser := jsonvx.NewParser([]byte(`// comment
-  123`), cfg) // valid number after line comment
+  parser := jsonvx.NewParser([]byte(`// Kazuma's luck stat
+  99`), cfg) // valid number after line comment
   ```
   ### `AllowBlockComments`:
   Enables the use of block comments (`/* ... */`).
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowBlockComments(true))
-  parser := jsonvx.NewParser([]byte(`/* comment */ 123`), cfg)
+  parser := jsonvx.NewParser([]byte(`/* Explosions Megumin casts per day */ 1`), cfg) // valid number after block comment
   ```
   ### `DisallowDuplicateKeys`:
   Rejects objects that repeat a key with `ErrJSONDuplicateKey`, reporting where the duplicate is. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` count as the same key. When disabled (the default), the last value for a repeated key wins. Useful for linters and validators, where a repeated key is usually a mistake.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithDisallowDuplicateKeys(true))
-  parser := jsonvx.NewParser([]byte(`{"a": 1, "b": 2}`), cfg) // valid, keys are unique
-  parser := jsonvx.NewParser([]byte(`{"a": 1, "a": 2}`), cfg) // error: duplicate key in JSON object: "a" at line 1, column 10
+  parser := jsonvx.NewParser([]byte(`{"best_girl": "Rem", "best_boy": "Subaru"}`), cfg)   // valid, keys are unique
+  parser := jsonvx.NewParser([]byte(`{"best_girl": "Rem", "best_girl": "Emilia"}`), cfg) // error: duplicate key in JSON object: "best_girl" at line 1, column 22
   ```
   ### `AllowJSON5`:
   Enables the use of [`JSON5`](https://json5.org) syntax.
   ```go
   parser := jsonvx.NewParser([]byte(`
 {
-  // comments
-  unquoted: 'and you can quote me on that',
-  singleQuotes: 'I can use "double quotes" here',
-  lineBreaks: "Look, Mom! \
-No \\n's!",
-  hexadecimal: 0xdecaf,
-  leadingDecimalPoint: .8675309, andTrailing: 8675309.,
-  positiveSign: +1,
-  trailingComma: 'in objects', andIn: ['arrays',],
-  "backwardsCompatible": "with JSON",
+  // Rudeus Greyrat's status window
+  name: 'Rudeus Greyrat',
+  title: 'Rudeus "the Quagmire"',
+  lore: "Reborn in another world, \
+determined to live without regrets. No \\n needed!",
+  mana: 0xFF,
+  critChance: .25, luckMultiplier: 7.,
+  karma: +1,
+  spells: ['Stone Cannon', 'Quagmire',],
+  "teacher": "Roxy Migurdia",
 }
 `), jsonvx.JSON5Config())
   ```
@@ -272,8 +277,8 @@ No \\n's!",
   Sets the maximum nesting depth of arrays and objects (default `1000`, see `jsonvx.DefaultMaxDepth`). Deeper input fails with `ErrJSONTooDeep` instead of overflowing the stack, which would crash the whole program. This applies to every config, including `JSON5Config()`. A value of `0` or less uses the default.
   ```go
   cfg := jsonvx.NewParserConfig(jsonvx.WithMaxDepth(2))
-  parser := jsonvx.NewParser([]byte(`[[1]]`), cfg)   // valid, depth 2
-  parser := jsonvx.NewParser([]byte(`[[[1]]]`), cfg) // error: JSON nesting too deep: "[" exceeds maximum depth of 2 at line 1, column 3
+  parser := jsonvx.NewParser([]byte(`[["loop 1"]]`), cfg)    // valid, depth 2
+  parser := jsonvx.NewParser([]byte(`[[["loop 99"]]]`), cfg) // error: JSON nesting too deep: "[" exceeds maximum depth of 2 at line 1, column 3 (Return by Death can't save you here)
   ```
 
 ## Parsing behavior
@@ -296,7 +301,7 @@ Below are examples of how to `parse`, `traverse` and `retrieve` values from the 
 This example shows how to parse a `JSON` object using `jsonvx`, cast it to a `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
 
 ```go
-parser := jsonvx.NewParser([]byte(`{"name": "Alice", "age": 30}`), jsonvx.NewParserConfig())
+parser := jsonvx.NewParser([]byte(`{"name": "Megumin", "spell": "Explosion"}`), jsonvx.NewParserConfig())
 
 // Parse the JSON input
 node, err := parser.Parse()
@@ -314,10 +319,10 @@ if !ok {
 objNode.ForEach(func(key []byte, value jsonvx.JSON, object *jsonvx.Object) {
 	fmt.Printf("Key: %s, Value: %v\n", string(key), value)
 })
-// Key: name, Value: Alice
-// Key: age, Value: 30
+// Key: name, Value: Megumin
+// Key: spell, Value: Explosion
 
-fmt.Println(objNode.Keys()) // [name age]
+fmt.Println(objNode.Keys()) // [name spell]
 ```
 
 ### Array
@@ -328,7 +333,7 @@ fmt.Println(objNode.Keys()) // [name age]
 This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to a `jsonvx.Array` node, and iterate over its elements using the built-in `ForEach` method.
 
 ```go
-parser := jsonvx.NewParser([]byte(`[1, 2, 3]`), jsonvx.NewParserConfig())
+parser := jsonvx.NewParser([]byte(`["Aqua", "Megumin", "Darkness"]`), jsonvx.NewParserConfig())
 
 // Parse the JSON input
 node, err := parser.Parse()
@@ -346,6 +351,9 @@ if !ok {
 arrNode.ForEach(func(item jsonvx.JSON, index int, array *jsonvx.Array) {
 	fmt.Printf("Item %d: %v\n", index, item)
 })
+// Item 0: Aqua
+// Item 1: Megumin
+// Item 2: Darkness
 ```
 
 ### String
@@ -360,7 +368,7 @@ arrNode.ForEach(func(item jsonvx.JSON, index int, array *jsonvx.Array) {
 This example demonstrates how to parse a `JSON` `string` using `jsonvx`, cast it to a `jsonvx.String` node, and get its `string` value using the built-in `Value` method.
 
 ```go
-parser := jsonvx.NewParser([]byte(`"Hello, World!"`), jsonvx.NewParserConfig())
+parser := jsonvx.NewParser([]byte(`"Starting life in another world!"`), jsonvx.NewParserConfig())
 
 // Parse the JSON input
 node, err := parser.Parse()
@@ -380,7 +388,7 @@ if err != nil {
 	panic(fmt.Sprintf("failed to extract string value: %s", err))
 }
 
-fmt.Println(strValue) // Output: Hello, World!
+fmt.Println(strValue) // Output: Starting life in another world!
 ```
 
 Escape sequences are decoded by `Value()`, while `Raw()` keeps them as written:
@@ -408,7 +416,7 @@ raw, _ := strNode.Raw()     // caf\u00e9\nsay \"hi\"
 This example demonstrates how to parse a `JSON` `number` using `jsonvx`, cast it to a `jsonvx.Number` node, and get its `float64` value using the built-in `Value` method.
 
 ```go
-parser := jsonvx.NewParser([]byte("123456"), jsonvx.NewParserConfig())
+parser := jsonvx.NewParser([]byte("9999"), jsonvx.NewParserConfig())
 
 // Parse the JSON input
 node, err := parser.Parse()
@@ -428,16 +436,16 @@ if err != nil {
 	panic(fmt.Sprintf("failed to extract number value: %s", err))
 }
 
-fmt.Println(numValue) // Output: 123456
+fmt.Println(numValue) // Output: 9999
 ```
 
 For large IDs, `Value()` rounds while `Int64()`, `BigInt()` and `Raw()` keep every digit:
 
 ```go
-parser := jsonvx.NewParser([]byte(`{"user_id": 9007199254740993}`), nil)
+parser := jsonvx.NewParser([]byte(`{"adventurer_card_id": 9007199254740993}`), nil)
 node, _ := parser.Parse()
 obj, _ := jsonvx.AsObject(node)
-idNode, _ := obj.QueryPath("user_id")
+idNode, _ := obj.QueryPath("adventurer_card_id")
 id, _ := jsonvx.AsNumber(idNode)
 
 approx, _ := id.Value() // 9.007199254740992e+15 (rounded)
@@ -492,13 +500,13 @@ parser := jsonvx.NewParser([]byte("null"), jsonvx.NewParserConfig())
 // Parse the JSON input
 node, err := parser.Parse()
 if err != nil {
-	panic("failed to parse JSON: %s", err)
+	panic(fmt.Sprintf("failed to parse JSON: %s", err))
 }
 
 // Cast the parsed node to a NullNode
 nullNode, ok := jsonvx.AsNull(node)
 if !ok {
-  panic("expected root node to be null")
+	panic("expected root node to be null")
 }
 
 // Extract the underlying Go value
@@ -512,15 +520,17 @@ fmt.Println(nilValue) // Output: <nil>
 - A `JSON` input with only comments and no data will result in a parse error.
 
 ```go
-parser := jsonvx.NewParser([]byte("/* Block Comment */"), jsonvx.NewParserConfig(
-	jsonvx.WithAllowBlockComments(true), jsonvx.WithAllowLineComments(true),
-))
+cfg := jsonvx.NewParserConfig(jsonvx.WithAllowBlockComments(true), jsonvx.WithAllowLineComments(true))
 
-// parse the JSON
+// Comments around data are ignored
+parser := jsonvx.NewParser([]byte(`/* Kazuma's luck stat */ 99 // suspiciously high`), cfg)
 node, err := parser.Parse()
-if err != nil {
-	panic(fmt.Sprintf("failed to parse JSON: %s", err))
-}
+fmt.Println(node, err) // Output: 99 <nil>
+
+// Only comments, no data: an error
+parser = jsonvx.NewParser([]byte(`/* Aqua's intelligence stat */`), cfg)
+node, err = parser.Parse()
+fmt.Println(node, err) // Output: <nil> no meaningful content to parse
 ```
 
 ## Maintainers
@@ -534,4 +544,4 @@ if err != nil {
 
 ## License
 
-This project is licensed under the [MIT](https://opensource.org/license/mit). See the [LICENSE](https://github.com/bube054/jsonvx/blob/master/LICENSE) file for details.
+This project is licensed under the [MIT](https://opensource.org/license/mit). See the [LICENSE](https://github.com/bube054/jsonvx/blob/main/LICENSE.md) file for details.
