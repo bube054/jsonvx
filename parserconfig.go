@@ -28,6 +28,11 @@ type ParserConfig struct {
 	AllowNewlineInStrings bool // AllowNewlineInStrings permits multiple new line characters being escaped.
 	AllowOtherEscapeChars bool // AllowOtherEscapeChars enables support for escape sequences other than \\, \/, \b, \n, \f, \r, \t and Unicode escapes (\uXXXX).
 
+	// AllowControlCharsInStrings permits raw control characters (bytes 0x00-0x1F, such as a
+	// tab) inside strings, as JSON5 does. Raw line breaks (LF and CR) are never allowed in
+	// strings, as in both JSON and JSON5; use AllowNewlineInStrings for an escaped line break.
+	AllowControlCharsInStrings bool
+
 	AllowTrailingCommaArray  bool // AllowTrailingCommaArray permits a trailing comma in array literals (e.g., `[1, 2, ]`).
 	AllowTrailingCommaObject bool // AllowTrailingCommaObject permits a trailing comma in object literals (e.g., `{"a": 1,}`).
 
@@ -93,6 +98,7 @@ func (c *ParserConfig) String() string {
 		{"AllowSingleQuotes", c.AllowSingleQuotes},
 		{"AllowNewlineInStrings", c.AllowNewlineInStrings},
 		{"AllowOtherEscapeChars", c.AllowOtherEscapeChars},
+		{"AllowControlCharsInStrings", c.AllowControlCharsInStrings},
 		{"AllowTrailingCommaArray", c.AllowTrailingCommaArray},
 		{"AllowTrailingCommaObject", c.AllowTrailingCommaObject},
 		{"DisallowDuplicateKeys", c.DisallowDuplicateKeys},
@@ -173,6 +179,14 @@ func WithAllowOtherEscapeChars(allow bool) func(*ParserConfig) {
 	}
 }
 
+// WithAllowControlCharsInStrings sets whether raw control characters other than line
+// breaks (such as a tab) are allowed inside strings.
+func WithAllowControlCharsInStrings(allow bool) func(*ParserConfig) {
+	return func(c *ParserConfig) {
+		c.AllowControlCharsInStrings = allow
+	}
+}
+
 func WithAllowTrailingCommaArray(allow bool) func(*ParserConfig) {
 	return func(c *ParserConfig) {
 		c.AllowTrailingCommaArray = allow
@@ -216,19 +230,20 @@ func WithMaxDepth(depth int) func(*ParserConfig) {
 // JSON5Config returns a ParserConfig with all features enabled for JSON5 compatibility.
 func JSON5Config() *ParserConfig {
 	return &ParserConfig{
-		AllowExtraWS:             true,
-		AllowHexNumbers:          true,
-		AllowPointEdgeNumbers:    true,
-		AllowInfinity:            true,
-		AllowNaN:                 true,
-		AllowLeadingPlus:         true,
-		AllowUnquoted:            true,
-		AllowSingleQuotes:        true,
-		AllowNewlineInStrings:    true,
-		AllowOtherEscapeChars:    true,
-		AllowTrailingCommaArray:  true,
-		AllowTrailingCommaObject: true,
-		AllowLineComments:        true,
-		AllowBlockComments:       true,
+		AllowExtraWS:               true,
+		AllowHexNumbers:            true,
+		AllowPointEdgeNumbers:      true,
+		AllowInfinity:              true,
+		AllowNaN:                   true,
+		AllowLeadingPlus:           true,
+		AllowUnquoted:              true,
+		AllowSingleQuotes:          true,
+		AllowNewlineInStrings:      true,
+		AllowOtherEscapeChars:      true,
+		AllowControlCharsInStrings: true,
+		AllowTrailingCommaArray:    true,
+		AllowTrailingCommaObject:   true,
+		AllowLineComments:          true,
+		AllowBlockComments:         true,
 	}
 }

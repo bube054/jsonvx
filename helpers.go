@@ -125,10 +125,6 @@ func startsWithDigit(input []byte) bool {
 	return len(input) > 0 && input[0] >= '0' && input[0] <= '9'
 }
 
-func startsOrEndsWithDot(input []byte) bool {
-	return bytes.HasPrefix(input, []byte{'.'}) || bytes.HasSuffix(input, []byte{'.'})
-}
-
 func isNaN(input []byte) bool {
 	if after, ok := bytes.CutPrefix(input, []byte{'+'}); ok {
 		return isNaN(after)
@@ -333,4 +329,77 @@ func hexToFloat64(input []byte) (float64, bool) {
 
 	f, _ := new(big.Float).SetInt(n).Float64()
 	return f, true
+}
+
+// checkDecimalNumber checks a decimal number literal against JSON's number grammar:
+//
+//	[sign] int [frac] [exp]
+//	int  = "0" | digit1-9 digit*
+//	frac = "." digit+
+//	exp  = ("e" | "E") ["+" | "-"] digit+
+//
+// The sign may be "-", or "+" when the caller allows a leading plus. With
+// allowPointEdge (JSON5 style), the int part may be empty when digits follow the
+// point (".5") and the frac part may have no digits ("5.", "5.e3").
+//
+// It returns NONE for a valid number, INVALID_LEADING_ZERO or INVALID_POINT_EDGE_DOT
+// for those specific mistakes, and INVALID_CHARACTER when num is not a decimal
+// number at all. It does not check the int64 or float64 range.
+func checkDecimalNumber(num []byte, allowPointEdge bool) TokenSubKind {
+	i := 0
+
+	if i < len(num) && (num[i] == '+' || num[i] == '-') {
+		i++
+	}
+
+	intStart := i
+	for i < len(num) && isDigit(num[i]) {
+		i++
+	}
+	intDigits := i - intStart
+
+	if intDigits > 1 && num[intStart] == '0' {
+		return INVALID_LEADING_ZERO
+	}
+
+	hasPoint := false
+	fracDigits := 0
+	if i < len(num) && num[i] == '.' {
+		hasPoint = true
+		i++
+		fracStart := i
+		for i < len(num) && isDigit(num[i]) {
+			i++
+		}
+		fracDigits = i - fracStart
+	}
+
+	if intDigits == 0 && fracDigits == 0 {
+		return INVALID_CHARACTER // no digits at all, such as "-", "." or "e5"
+	}
+
+	// ".5" (no int digits) and "5." (no frac digits) need AllowPointEdgeNumbers.
+	if (intDigits == 0 || (hasPoint && fracDigits == 0)) && !allowPointEdge {
+		return INVALID_POINT_EDGE_DOT
+	}
+
+	if i < len(num) && (num[i] == 'e' || num[i] == 'E') {
+		i++
+		if i < len(num) && (num[i] == '+' || num[i] == '-') {
+			i++
+		}
+		expStart := i
+		for i < len(num) && isDigit(num[i]) {
+			i++
+		}
+		if i == expStart {
+			return INVALID_CHARACTER // exponent without digits, such as "1e" or "1e+"
+		}
+	}
+
+	if i != len(num) {
+		return INVALID_CHARACTER // trailing characters, such as "1.5x" or "1e5e5"
+	}
+
+	return NONE
 }

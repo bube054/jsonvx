@@ -16,6 +16,7 @@ With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives y
 - [Single-quoted strings `('text')`](#allowsinglequotes)
 - [Newlines inside strings](#allownewlineinstrings)
 - [Escape characters outside the standard set](#allowotherescapechars)
+- [Raw control characters such as tabs inside strings](#allowcontrolcharsinstrings)
 - [Trailing commas in arrays or objects](#allowtrailingcommaarray)
 - [Line comments `(// comment)` and Block comments `(/* comment */)`](#allowlinecomments)
 - [Extra whitespace in unusual places](#allowextraws)
@@ -23,6 +24,8 @@ With a single [`ParserConfig`](#configuring-the-parser) struct, `jsonvx` gives y
 - [Enable `JSON5`](#allowjson5)
 
 It also guards against hostile input with a [nesting depth limit](#maxdepth), on by default, so deeply nested data returns an error instead of crashing your program.
+
+In its default strict mode, `jsonvx` passes every accept and reject case in [JSONTestSuite](https://github.com/nst/JSONTestSuite), the standard conformance suite for JSON parsers; the cases run as part of `go test`.
 
 After parsing, `jsonvx` gives you a clean abstract syntax tree `(AST)` that you can either traverse manually or query using the built-in API. Each node in the tree implements a common `JSON interface`, so you can safely `inspect` and `transform` data as needed. Writing it back out as `JSON` is [coming soon](#jsonvx).
 
@@ -206,6 +209,15 @@ You can configure the `Parser` using the functional options pattern, allowing yo
   cfg := jsonvx.NewParserConfig(jsonvx.WithAllowOtherEscapeChars(true))
   parser := jsonvx.NewParser([]byte(`"hello\qworld"`), cfg) // valid other escape character
   ```
+  ### `AllowControlCharsInStrings`:
+  Allows raw control characters (bytes `0x00`-`0x1F`, such as a tab) inside strings, as `JSON5` does. Strict `JSON` requires them to be escaped (`\t`). Raw line breaks are never allowed inside strings, in `JSON` or `JSON5`; use [`AllowNewlineInStrings`](#allownewlineinstrings) for an escaped line break.
+  ```go
+  cfg := jsonvx.NewParserConfig(jsonvx.WithAllowControlCharsInStrings(true))
+  parser := jsonvx.NewParser([]byte("\"a\tb\""), cfg)  // valid, raw tab inside the string
+  parser := jsonvx.NewParser([]byte("\"a\nb\""), cfg)  // invalid, raw line break inside the string
+  ```
+
+  > **Changed in v1.2.0:** before v1.2.0, strict mode accepted raw control characters inside strings. If you relied on that, enable this option.
   ### `AllowTrailingCommaArray`:
   Permits a trailing comma in array literals (e.g., `[1, 2, ]`).
   ```go

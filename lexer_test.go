@@ -132,9 +132,9 @@ func TestLexString(t *testing.T) {
 		{msg: "Lex invalid esc 4 hex digits single string", input: []byte(`'\u00Z1'`), expected: []Token{newToken(ILLEGAL, INVALID_HEX_STRING, []byte(`'\u00Z1'`), 1, 1, nil)}, cfg: NewParserConfig(WithAllowSingleQuotes(true))},
 		{msg: "Lex invalid escape single string without AllowEscapeChars", input: []byte(`'\Users'`), expected: []Token{newToken(ILLEGAL, INVALID_ESCAPED_STRING, []byte(`'\Users'`), 1, 1, nil)}, cfg: NewParserConfig(WithAllowSingleQuotes(true), WithAllowOtherEscapeChars(false))},
 		{msg: "Lex invalid escape single string with AllowEscapeChars", input: []byte(`'\Users'`), expected: []Token{newToken(STRING, SINGLE_QUOTED, []byte(`'\Users'`), 1, 1, nil), newToken(EOF, NONE, nil, 1, 9, nil)}, cfg: NewParserConfig(WithAllowSingleQuotes(true), WithAllowOtherEscapeChars(true))},
-		{msg: "Lex invalid escape newline double string with AllowNewlineInStrings", input: []byte(`"\
-		// "`), expected: []Token{newToken(STRING, DOUBLE_QUOTED, []byte(`"\
-		// "`), 2, 1, nil), newToken(EOF, NONE, nil, 2, 7, nil)}, cfg: NewParserConfig(WithAllowSingleQuotes(true), WithAllowNewlineInStrings(true))},
+		// An escaped line break followed by "// ", written with explicit escapes so the
+		// test input does not pick up raw tabs from this file's indentation.
+		{msg: "Lex invalid escape newline double string with AllowNewlineInStrings", input: []byte("\"\\\n// \""), expected: []Token{newToken(STRING, DOUBLE_QUOTED, []byte("\"\\\n// \""), 2, 1, nil), newToken(EOF, NONE, nil, 2, 5, nil)}, cfg: NewParserConfig(WithAllowSingleQuotes(true), WithAllowNewlineInStrings(true))},
 
 		// lex string with double quotes with AllowSingleQuotes
 		{msg: "Lex invalid double string with AllowLineComments", input: []byte(`"`), expected: []Token{newToken(ILLEGAL, INVALID_STRING, []byte(`"`), 1, 1, nil)}, cfg: NewParserConfig(WithAllowSingleQuotes(true))},

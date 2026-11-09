@@ -81,6 +81,17 @@ func (p *Parser) Parse() (JSON, error) {
 	p.nextToken()
 	p.nextToken()
 
+	return p.parseValue()
+}
+
+// parseValue parses a value: the whole document, an array item or an object value.
+// Unquoted identifiers (AllowUnquoted) are only valid as object keys, so one in a
+// value position, such as [foo] or {a: foo}, is a syntax error.
+func (p *Parser) parseValue() (JSON, error) {
+	if p.curToken.Kind == STRING && p.curToken.SubKind == IDENT {
+		return nil, WrapJSONSyntaxError(p.curToken)
+	}
+
 	return p.parse()
 }
 
@@ -154,7 +165,7 @@ func (p *Parser) parseArray() (JSON, error) {
 	p.ignoreWhitespacesOrComments()
 
 	for !p.expectCurToken(RIGHT_SQUARE_BRACE) {
-		item, err := p.parse()
+		item, err := p.parseValue()
 		if err != nil {
 			return nil, err
 		}
@@ -237,18 +248,12 @@ func (p *Parser) parseObject() (JSON, error) {
 
 		p.ignoreWhitespacesOrComments()
 
-		value, err := p.parse()
+		value, err := p.parseValue()
 		if err != nil {
 			return nil, err
 		}
 
 		p.ignoreWhitespacesOrComments()
-
-		valueString, ok := value.(*String)
-
-		if ok && valueString.Token.Kind == STRING && valueString.Token.SubKind == IDENT {
-			return nil, WrapJSONSyntaxError(*valueString.Token)
-		}
 
 		// Keys are decoded up front so that sorting, QueryPath and ForEach all see
 		// the real key (e.g. "caf\u00e9" is stored as "café").

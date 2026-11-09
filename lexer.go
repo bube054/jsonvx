@@ -1,7 +1,6 @@
 package jsonvx
 
 import (
-	"bytes"
 	"fmt"
 )
 
@@ -47,6 +46,13 @@ func (l *Lexer) String() string {
 func (l *Lexer) Token() Token {
 	if l.config == nil {
 		l.config = NewParserConfig()
+	}
+
+	// The end of input is decided by position, not by reading a 0 byte, so a NUL
+	// byte in the data is an ordinary (illegal) character instead of a silent end
+	// of input that would drop everything after it.
+	if l.atEnd() {
+		return newToken(EOF, NONE, nil, l.line, l.column, nil)
 	}
 
 	pos := l.pos
@@ -115,11 +121,11 @@ func (l *Lexer) Token() Token {
 				return newToken(ILLEGAL, INVALID_LINE_COMMENT, l.input[l.pos:], l.line, col, nil)
 			}
 
-			for !isNewLine(l.char) && l.char != 0 {
+			for !isNewLine(l.char) && !l.atEnd() {
 				l.readChar()
 			}
 
-			if l.char == 0 {
+			if l.atEnd() {
 				return newToken(COMMENT, LINE_COMMENT, l.input[pos:], l.line, col, nil)
 			}
 
@@ -130,11 +136,11 @@ func (l *Lexer) Token() Token {
 				return newToken(ILLEGAL, INVALID_BLOCK_COMMENT, l.input[l.pos:], l.line, col, nil)
 			}
 
-			for !(l.char == 47 && l.prev() == 42) && l.char != 0 {
+			for !(l.char == 47 && l.prev() == 42) && !l.atEnd() {
 				l.readChar()
 			}
 
-			if l.char == 0 {
+			if l.atEnd() {
 				return newToken(ILLEGAL, INVALID_BLOCK_COMMENT, l.input[pos:], l.line, col, nil)
 			}
 
@@ -153,7 +159,7 @@ func (l *Lexer) Token() Token {
 		l.readChar()
 
 		for {
-			if l.char == 0 {
+			if l.atEnd() {
 				return newToken(ILLEGAL, INVALID_STRING, l.input[pos:], l.line, col, nil)
 			}
 
@@ -165,6 +171,16 @@ func (l *Lexer) Token() Token {
 				}
 
 				return newToken(STRING, DOUBLE_QUOTED, l.input[pos:l.readPos], l.line, col, l.readChar)
+			}
+
+			// Raw control characters (bytes 0x00-0x1F) must be escaped in JSON strings.
+			// JSON5 allows most of them raw (AllowControlCharsInStrings), but never a raw
+			// line break. Escaped characters are consumed below and never reach this check.
+			if l.char < 0x20 {
+				isLineBreak := l.char == '\n' || l.char == '\r'
+				if isLineBreak || !l.config.AllowControlCharsInStrings {
+					return newToken(ILLEGAL, INVALID_STRING, l.input[pos:], l.line, col, nil)
+				}
 			}
 
 			// Handle escape sequences: validate the character after the backslash,
@@ -209,9 +225,6 @@ func (l *Lexer) Token() Token {
 			l.readChar()
 		}
 	// Lexing string ends here
-
-	case 0:
-		return newToken(EOF, NONE, nil, l.line, col, nil)
 
 	default:
 
@@ -282,17 +295,6 @@ func (l *Lexer) Token() Token {
 
 			num := l.input[pos:l.pos]
 
-			numberParts := bytes.Split(num, []byte("."))
-			integerPart := numberParts[0]
-
-			hasLeadingZero := len(integerPart) > 1 && integerPart[0] == '0'
-			hasHexPrefix := len(integerPart) > 1 && (integerPart[1] == 'x' || integerPart[1] == 'X')
-
-			// if not does not start with 0X or 0x
-			if hasLeadingZero && !hasHexPrefix {
-				return newToken(ILLEGAL, INVALID_LEADING_ZERO, l.input[pos:], l.line, col, nil)
-			}
-
 			if startsWithPlus(num) && !l.config.AllowLeadingPlus {
 				return newToken(ILLEGAL, INVALID_LEADING_PLUS, l.input[pos:], l.line, col, nil)
 			}
@@ -317,22 +319,8 @@ func (l *Lexer) Token() Token {
 				return newToken(NUMBER, INF, num, l.line, col, nil)
 			}
 
-			if isInteger(num) {
-				return newToken(NUMBER, INTEGER, num, l.line, col, nil)
-			}
-
-			if startsOrEndsWithDot(num) && !l.config.AllowPointEdgeNumbers {
-				return newToken(ILLEGAL, INVALID_POINT_EDGE_DOT, l.input[pos:], l.line, col, nil)
-			}
-
-			if isFloat(num) {
-				return newToken(NUMBER, FLOAT, num, l.line, col, nil)
-			}
-
-			if isScientificNotation(num) {
-				return newToken(NUMBER, SCI_NOT, num, l.line, col, nil)
-			}
-
+			// Hex is checked before decimal numbers, so "0x1F" is never mistaken for a
+			// decimal number with a leading zero.
 			isHexDec := isHex(num)
 			if isHexDec && !l.config.AllowHexNumbers {
 				return newToken(ILLEGAL, INVALID_HEX_NUMBER, l.input[pos:], l.line, col, nil)
@@ -342,6 +330,29 @@ func (l *Lexer) Token() Token {
 				return newToken(NUMBER, HEX, num, l.line, col, nil)
 			}
 
+			// Decimal numbers must follow JSON's number grammar exactly. strconv accepts
+			// more than JSON does ("inf", "nan", "2.e3", "-.5"), so it is only used to
+			// classify numbers that are already known to be valid.
+			switch checkDecimalNumber(num, l.config.AllowPointEdgeNumbers) {
+			case NONE:
+				if isInteger(num) {
+					return newToken(NUMBER, INTEGER, num, l.line, col, nil)
+				}
+
+				if isFloat(num) {
+					return newToken(NUMBER, FLOAT, num, l.line, col, nil)
+				}
+
+				// Valid, but beyond float64's range, such as 1e400.
+				return newToken(NUMBER, SCI_NOT, num, l.line, col, nil)
+			case INVALID_LEADING_ZERO:
+				return newToken(ILLEGAL, INVALID_LEADING_ZERO, l.input[pos:], l.line, col, nil)
+			case INVALID_POINT_EDGE_DOT:
+				return newToken(ILLEGAL, INVALID_POINT_EDGE_DOT, l.input[pos:], l.line, col, nil)
+			}
+
+			// Anything else is not a number. Fall through, so it can be read as an
+			// identifier (with AllowUnquoted) or reported as an illegal character.
 		}
 
 		for range count {
@@ -416,6 +427,11 @@ func (l *Lexer) TokensWithout(kind TokenKind) Tokens {
 
 // readChar advances the lexer to the next character in the input,
 // updating the current character, position, and line counters as needed.
+// atEnd reports whether the lexer has consumed all of the input.
+func (l *Lexer) atEnd() bool {
+	return l.pos >= len(l.input)
+}
+
 func (l *Lexer) readChar() {
 	if l.readPos > len(l.input)-1 {
 		l.char = 0
