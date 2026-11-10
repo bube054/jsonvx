@@ -35,10 +35,10 @@ In its default strict mode, `jsonvx` passes every accept and reject case in [JSO
 
 ## Installing
 
-To start using `jsonvx`, install [Go](https://golang.org) and run `go get`:
+To start using `jsonvx`, install [Go](https://golang.org) 1.23 or newer and run:
 
 ```sh
-$ go get -u github.com/bube054/jsonvx
+go get github.com/bube054/jsonvx
 ```
 
 ## Quick Start
