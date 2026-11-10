@@ -2,6 +2,14 @@
 
 All notable changes to `jsonvx`. Versions follow [semantic versioning](https://semver.org).
 
+## v1.4.1 (2026-11-10)
+
+Documentation only; no code changes.
+
+### Changed
+- The README has Objects and Arrays examples for `All()`, `Values()`, `Keys()` and `Len()`, plus Booleans and Null.
+- The install command is `go get github.com/bube054/jsonvx`, and the README states the Go 1.23 minimum.
+
 ## v1.4.0 (2026-11-10)
 
 ### New
