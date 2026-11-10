@@ -35,10 +35,10 @@ In its default strict mode, `jsonvx` passes every accept and reject case in [JSO
 
 ## Installing
 
-To start using `jsonvx`, install [Go](https://golang.org) and run `go get`:
+To start using `jsonvx`, install [Go](https://golang.org) 1.23 or newer and run:
 
 ```sh
-$ go get -u github.com/bube054/jsonvx
+go get github.com/bube054/jsonvx
 ```
 
 ## Quick Start
@@ -145,21 +145,54 @@ root.GetObject("isekais", "1")                 // {rank: 2, title: Mushoku Tense
 
 On an array, the first step is an index: `isekais.GetString("0", "title")`.
 
-## Looping
+## Working With Each Type
 
-`All()` and `Values()` work with a plain `for range` loop, so `break`, `continue` and `return` work as usual. Objects keep the order their keys were written in.
+### Objects
+- `All()` loops over key-value pairs, `Values()` over just the values, and `Keys()` returns the keys as a `[]string`. All three follow the order the keys were written in. Use `sort.Strings(obj.Keys())` for alphabetical order.
+- `Len()` is the number of keys.
+- Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
+- `Equal` compares objects by key, so key order does not affect it.
 
 ```go
 hero, _ := root.GetObject("isekais", "0", "hero")
-for key, value := range hero.All() {
-	fmt.Println(key, value) // first Subaru, last Natsuki
-}
-fmt.Println(hero.Keys()) // [first last]
 
-party, _ := root.GetArray("isekais", "0", "party")
-for i, member := range party.All() {
-	fmt.Println(i, member) // 0 Emilia, 1 Rem, 2 Ram, 3 Beatrice
+for key, value := range hero.All() {
+	fmt.Println(key, value)
 }
+// first Subaru
+// last Natsuki
+
+for value := range hero.Values() {
+	fmt.Println(value)
+}
+// Subaru
+// Natsuki
+
+fmt.Println(hero.Keys()) // [first last]
+fmt.Println(hero.Len())  // 2
+
+dup, _ := jsonvx.ParseObject([]byte(`{"best_girl": "Emilia", "best_girl": "Rem"}`), nil)
+bestGirl, _ := dup.GetString("best_girl") // Rem, the last value wins
+```
+
+### Arrays
+- In a path, an array index is written as a string: `"0"` is the first item.
+- `All()` loops over index and item, `Values()` over just the items, and `Len()` is the number of items. `break`, `continue` and `return` work as in any `for range` loop.
+- Loop items are `jsonvx.JSON` nodes. Printing one shows its value; to read inside one, cast it to `*jsonvx.Object` or `*jsonvx.Array`.
+
+```go
+party, _ := root.GetArray("isekais", "0", "party")
+fmt.Println(party.Len()) // 4
+
+firstMember, _ := party.GetString("0") // Emilia
+
+for i, member := range party.All() {
+	fmt.Println(i, member)
+}
+// 0 Emilia
+// 1 Rem
+// 2 Ram
+// 3 Beatrice
 
 for member := range party.Values() {
 	if member.String() == "Rem" {
@@ -167,9 +200,56 @@ for member := range party.Values() {
 		break
 	}
 }
+
+// An array of objects: cast each item to read inside it.
+isekais, _ := root.GetArray("isekais")
+for item := range isekais.Values() {
+	show, _ := item.(*jsonvx.Object)
+	title, _ := show.GetString("title")
+	fmt.Println(title)
+}
+// Re:Zero
+// Mushoku Tensei
+// KonoSuba
 ```
 
-The values in a loop are `jsonvx.JSON` nodes. Printing one shows its value; to read inside one, see [working with nodes](#working-with-nodes).
+### Strings
+- `GetString` decodes escape sequences: `\n`, `\"`, `\u00e9` and emoji pairs like `\ud83d\ude00` become the characters they stand for. With `JSON5` options, `\'`, `\v`, `\0`, `\xHH` and line continuations are decoded too.
+- Keys are decoded the same way, so `{"caf\u00e9": 1}` is read with `root.GetInt("café")`.
+- To get a string exactly as written, escapes and all, use `Raw()` on the [node](#working-with-nodes).
+
+### Numbers
+- `GetInt` is exact for every whole number that fits in an `int64`.
+- `GetFloat` returns a `float64`, which holds about 16 significant digits, so longer numbers are rounded: `9007199254740993` becomes `9007199254740992`.
+- For whole numbers of any size, or the number exactly as written, use `GetNumber`:
+
+```go
+root, _ := jsonvx.ParseObject([]byte(`{"adventurer_card_id": 9007199254740993}`), nil)
+
+approx, _ := root.GetFloat("adventurer_card_id") // 9.007199254740992e+15 (rounded)
+exact, _ := root.GetInt("adventurer_card_id")    // 9007199254740993
+
+id, _ := root.GetNumber("adventurer_card_id")
+big, _ := id.BigInt() // 9007199254740993, any size
+raw, _ := id.Raw()    // "9007199254740993", as written
+```
+
+### Booleans and Null
+- `GetBool` reads `true` and `false`.
+- `null` has no value to return, so there is no getter for it. Check for it with a type assertion on the node:
+
+```go
+root, _ := jsonvx.ParseObject([]byte(`{"finished": false, "season4": null}`), nil)
+
+finished, _ := root.GetBool("finished") // false
+
+node, _ := root.QueryPath("season4")
+_, isNull := node.(*jsonvx.Null) // true
+```
+
+### Comments
+- Comments are ignored.
+- Input with only comments and no data is an error: `no meaningful content to parse`.
 
 ## Configuring The Parser
 
@@ -314,38 +394,6 @@ another world"`), cfg) // ok
   jsonvx.Parse([]byte(`[[["loop 99"]]]`), cfg) // error: JSON nesting too deep (Return by Death can't save you here)
   ```
 
-## How Values Are Read
-
-### Objects
-- Keys keep the order they were written in. `All()`, `Values()`, `Keys()` and printing all follow it. Use `sort.Strings(obj.Keys())` for alphabetical order.
-- Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. `{"a": 1, "a": 2}` reads as `{"a": 2}`. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
-- `Equal` compares objects by key, so key order does not affect it.
-
-### Strings
-- `GetString` decodes escape sequences: `\n`, `\"`, `\u00e9` and emoji pairs like `\ud83d\ude00` become the characters they stand for. With `JSON5` options, `\'`, `\v`, `\0`, `\xHH` and line continuations are decoded too.
-- Keys are decoded the same way, so `{"caf\u00e9": 1}` is read with `root.GetInt("café")`.
-- To get a string exactly as written, escapes and all, use `Raw()` on the [node](#working-with-nodes).
-
-### Numbers
-- `GetInt` is exact for every whole number that fits in an `int64`.
-- `GetFloat` returns a `float64`, which holds about 16 significant digits, so longer numbers are rounded: `9007199254740993` becomes `9007199254740992`.
-- For whole numbers of any size, or the number exactly as written, use `GetNumber`:
-
-```go
-root, _ := jsonvx.ParseObject([]byte(`{"adventurer_card_id": 9007199254740993}`), nil)
-
-approx, _ := root.GetFloat("adventurer_card_id") // 9.007199254740992e+15 (rounded)
-exact, _ := root.GetInt("adventurer_card_id")    // 9007199254740993
-
-id, _ := root.GetNumber("adventurer_card_id")
-big, _ := id.BigInt() // 9007199254740993, any size
-raw, _ := id.Raw()    // "9007199254740993", as written
-```
-
-### Comments
-- Comments are ignored.
-- Input with only comments and no data is an error: `no meaningful content to parse`.
-
 ## Working With Nodes
 
 When you don't know a value's type ahead of time, `QueryPath` returns the node itself, and a type switch tells you what it is. Every node type has a `Value()` method.
@@ -373,18 +421,6 @@ case *jsonvx.Array:
 	fmt.Println(v.Len(), "items")
 case *jsonvx.Object:
 	fmt.Println(v.Keys())
-}
-```
-
-The same works on loop values, for example to read from each object in an array:
-
-```go
-isekais, _ := root.GetArray("isekais")
-for item := range isekais.Values() {
-	if show, ok := item.(*jsonvx.Object); ok {
-		title, _ := show.GetString("title")
-		fmt.Println(title) // Re:Zero, Mushoku Tensei, KonoSuba
-	}
 }
 ```
 
