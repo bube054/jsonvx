@@ -2,7 +2,7 @@
 
 All notable changes to `jsonvx`. Versions follow [semantic versioning](https://semver.org).
 
-## Unreleased (v1.4.0)
+## v1.4.0 (2026-11-10)
 
 ### New
 - `Parse`, `ParseObject` and `ParseArray` parse in one call. `ParseObject` and `ParseArray` also check the top-level type and return `ErrWrongType` if it is wrong.
