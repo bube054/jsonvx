@@ -286,19 +286,21 @@ Below are examples of how to `parse`, `traverse` and `retrieve` values from the 
 
 ### Object
 - `Objects` are stored as a `slice` of `jsonvx.KeyValue` struct.
-- Keys keep the order they were written in the input. `ForEach`, `Keys()` and `String()` all follow that order, which matters for formatters and linters. Use `sort.Strings(obj.Keys())` if you want alphabetical order.
+- Keys keep the order they were written in the input. `All()`, `Values()`, `Keys()` and `String()` all follow that order, which matters for formatters and linters. Use `sort.Strings(obj.Keys())` if you want alphabetical order.
 - keys are stored as `[]byte`. Each object also keeps a lookup table from key to position, so `QueryPath` jumps straight to a key instead of searching for it.
 - values are stored as `jsonvx.JSON`
-- Each key-value pair is accessible using the `ForEach` method, and `Keys()` returns the keys as `[]string`.
+- Loop over key-value pairs with `for key, value := range obj.All()`, or over just the values with `obj.Values()`. `Keys()` returns the keys as `[]string`.
 - `Equal` compares objects by key, so key order does not affect it.
 - Mixed value types (e.g., `numbers`, `strings`, `objects`) are obviously supported.
-- Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. `{"a": 1, "a": 2}` is stored as `{"a": 2}`, so `Len()`, `ForEach` and `QueryPath` all see each key once. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` are the same key. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
+- Duplicate keys: the last value wins, matching `encoding/json`, JavaScript's `JSON.parse` and the `JSON5` spec. `{"a": 1, "a": 2}` is stored as `{"a": 2}`, so `Len()`, `All()` and `QueryPath` all see each key once. Keys are compared after decoding escapes, so `"a"` and `"\u0061"` are the same key. To reject duplicates instead, use [`DisallowDuplicateKeys`](#disallowduplicatekeys).
 
 > **Changed in v1.1.0:** before v1.1.0, duplicate keys were all kept and `QueryPath` was documented to return the first one. That was not reliable for larger objects, because the key sort did not keep equal keys in order. A repeated key now keeps the position where it first appeared, with the last value, as in JavaScript.
 >
 > **Changed in v1.1.0:** before v1.1.0, keys were sorted alphabetically, so `ForEach` and `String()` did not follow the input. They now keep the input order.
+>
+> **New in v1.3.0:** `All()` and `Values()` replace `ForEach`, which still works but is deprecated. They are Go 1.23 iterators, so you loop with plain `for ... range`, can `break` early, and get keys as `string` instead of `[]byte`.
 
-This example shows how to parse a `JSON` object using `jsonvx`, cast it to a `jsonvx.Object` node, and iterate over key-value pairs using the built-in `ForEach` method.
+This example shows how to parse a `JSON` object using `jsonvx`, cast it to a `jsonvx.Object` node, and loop over its key-value pairs with `All()`.
 
 ```go
 parser := jsonvx.NewParser([]byte(`{"name": "Megumin", "spell": "Explosion"}`), jsonvx.NewParserConfig())
@@ -315,12 +317,19 @@ if !ok {
 	panic("expected root node to be an object")
 }
 
-// Iterate over key-value pairs using ForEach
-objNode.ForEach(func(key []byte, value jsonvx.JSON, object *jsonvx.Object) {
-	fmt.Printf("Key: %s, Value: %v\n", string(key), value)
-})
+// Loop over key-value pairs, in input order
+for key, value := range objNode.All() {
+	fmt.Printf("Key: %s, Value: %v\n", key, value)
+}
 // Key: name, Value: Megumin
 // Key: spell, Value: Explosion
+
+// Just the values
+for value := range objNode.Values() {
+	fmt.Println(value)
+}
+// Megumin
+// Explosion
 
 fmt.Println(objNode.Keys()) // [name spell]
 ```
@@ -328,9 +337,9 @@ fmt.Println(objNode.Keys()) // [name spell]
 ### Array
 
 - Items are stored as a `slice` of `jsonvx.JSON`
-- Each item is accessible using the `ForEach` method.
+- Loop over items with `for i, item := range arr.All()`, or over just the items with `arr.Values()`. `ForEach` still works but is deprecated.
 
-This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to a `jsonvx.Array` node, and iterate over its elements using the built-in `ForEach` method.
+This example demonstrates how to parse a `JSON` `array` using `jsonvx`, cast it to a `jsonvx.Array` node, and loop over its items with `All()`.
 
 ```go
 parser := jsonvx.NewParser([]byte(`["Aqua", "Megumin", "Darkness"]`), jsonvx.NewParserConfig())
@@ -347,13 +356,22 @@ if !ok {
 	panic("expected root node to be an array")
 }
 
-// Iterate over each item using ForEach
-arrNode.ForEach(func(item jsonvx.JSON, index int, array *jsonvx.Array) {
-	fmt.Printf("Item %d: %v\n", index, item)
-})
+// Loop over each item with its index
+for i, item := range arrNode.All() {
+	fmt.Printf("Item %d: %v\n", i, item)
+}
 // Item 0: Aqua
 // Item 1: Megumin
 // Item 2: Darkness
+
+// Stop early with break
+for item := range arrNode.Values() {
+	if item.String() == "Megumin" {
+		fmt.Println("Found Megumin. EXPLOSION!")
+		break
+	}
+}
+// Found Megumin. EXPLOSION!
 ```
 
 ### String

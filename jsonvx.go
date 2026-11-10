@@ -45,6 +45,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"iter"
 	"math"
 	"strconv"
 	"strings"
@@ -455,9 +456,55 @@ type ArrayCallback func(item JSON, index int, array *Array)
 
 // ForEach calls the given callback for each item in the array.
 // It provides the item, its index, and the array itself.
+//
+// Deprecated: Use All, which works with a for-range loop and supports break:
+//
+//	for i, item := range arr.All() { ... }
 func (a *Array) ForEach(cb ArrayCallback) {
 	for i, item := range a.Items {
 		cb(item, i, a)
+	}
+}
+
+// All returns an iterator over the array's indices and items, in order.
+//
+//	for i, item := range arr.All() {
+//		fmt.Println(i, item)
+//	}
+//
+// A nil *Array yields nothing.
+func (a *Array) All() iter.Seq2[int, JSON] {
+	return func(yield func(int, JSON) bool) {
+		if a == nil {
+			return
+		}
+
+		for i, item := range a.Items {
+			if !yield(i, item) {
+				return
+			}
+		}
+	}
+}
+
+// Values returns an iterator over the array's items, in order.
+//
+//	for item := range arr.Values() {
+//		fmt.Println(item)
+//	}
+//
+// A nil *Array yields nothing.
+func (a *Array) Values() iter.Seq[JSON] {
+	return func(yield func(JSON) bool) {
+		if a == nil {
+			return
+		}
+
+		for _, item := range a.Items {
+			if !yield(item) {
+				return
+			}
+		}
 	}
 }
 
@@ -629,9 +676,58 @@ type ObjectCallback func(key []byte, value JSON, object *Object)
 // ForEach calls the given callback for each key-value pair in the object,
 // in the order they appear in the input.
 // It provides the key, value, and the object itself.
+//
+// Deprecated: Use All, which works with a for-range loop, supports break and
+// gives the key as a string:
+//
+//	for key, value := range obj.All() { ... }
 func (o *Object) ForEach(cb ObjectCallback) {
 	for _, prop := range o.Properties {
 		cb(prop.key, prop.value, o)
+	}
+}
+
+// All returns an iterator over the object's keys and values, in the order they
+// appear in the input.
+//
+//	for key, value := range obj.All() {
+//		fmt.Println(key, value)
+//	}
+//
+// A nil *Object yields nothing.
+func (o *Object) All() iter.Seq2[string, JSON] {
+	return func(yield func(string, JSON) bool) {
+		if o == nil {
+			return
+		}
+
+		for _, prop := range o.Properties {
+			if !yield(string(prop.key), prop.value) {
+				return
+			}
+		}
+	}
+}
+
+// Values returns an iterator over the object's values, in the order they appear
+// in the input. Use Keys for the keys.
+//
+//	for value := range obj.Values() {
+//		fmt.Println(value)
+//	}
+//
+// A nil *Object yields nothing.
+func (o *Object) Values() iter.Seq[JSON] {
+	return func(yield func(JSON) bool) {
+		if o == nil {
+			return
+		}
+
+		for _, prop := range o.Properties {
+			if !yield(prop.value) {
+				return
+			}
+		}
 	}
 }
 
