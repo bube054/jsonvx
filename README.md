@@ -47,7 +47,7 @@ $ go get -u github.com/bube054/jsonvx
 
 ## Quick Start
 
-Get up and running with `jsonvx` in seconds. Just create a new `Parser`, parse your `JSON`, and access fields using a [simple path query system](#query-path-syntax).
+Get up and running with `jsonvx` in seconds. Parse your `JSON` with `ParseObject`, then read values in one call with the [typed getters](#typed-getters).
 
 ```go
 package main
@@ -72,67 +72,116 @@ func main() {
 		]
 	}`)
 
-	parser := jsonvx.NewParser(data, nil)
-
-	node, err := parser.Parse()
+	// Parse, and check the top-level value is an object.
+	root, err := jsonvx.ParseObject(data, nil)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse JSON: %s", err))
+		panic(err)
 	}
 
-	rootObj, ok := jsonvx.AsObject(node)
-	if !ok {
-		panic("expected root node to be an object")
-	}
-
-	countNode, err := rootObj.QueryPath("count")
+	// Read values in one call each.
+	count, err := root.GetInt("count")
 	if err != nil {
-		panic(fmt.Sprintf("failed to query 'count' field: %s", err))
+		panic(err)
 	}
+	fmt.Println(count) // 3
 
-	countNum, ok := jsonvx.AsNumber(countNode)
-	if !ok {
-		panic("expected 'count' to be a number")
+	title, _ := root.GetString("isekais", "0", "title")
+	fmt.Println(title) // Re:Zero
+
+	// Loop over an array.
+	party, _ := root.GetArray("isekais", "2", "party")
+	for i, member := range party.All() {
+		fmt.Println(i, member) // 0 Aqua, 1 Megumin, 2 Darkness
 	}
-
-	countValue, err := countNum.Value()
-	if err != nil {
-		panic(fmt.Sprintf("failed to convert 'count' to numeric value: %s", err))
-	}
-
-	fmt.Println(countValue) // 3
 }
 ```
 
+Pass a config as the second argument for relaxed formats, for example `jsonvx.ParseObject(data, jsonvx.JSON5Config())`. Use `ParseArray` when the top-level value is an array, or `Parse` when it could be anything.
+
+> **New in v1.4.0:** `Parse`, `ParseObject`, `ParseArray` and the `Get*` methods. Before v1.4.0, the same program needed `NewParser`, `Parse`, `AsObject`, `QueryPath`, `AsNumber` and `Value`. That longer form still works and is shown below.
+
+## Typed Getters
+
+`*Object` and `*Array` have one getter per type. Each takes the same path as [`QueryPath`](#query-path-syntax) and returns the value already converted:
+
+| Method | Returns | Notes |
+| --- | --- | --- |
+| `GetString(path...)` | `string` | Escapes are decoded. |
+| `GetInt(path...)` | `int64` | Exact. Errors on `1.5` or `1e3` (`ErrNotInteger`) and on numbers past int64 (`ErrNumberOutOfRange`). |
+| `GetFloat(path...)` | `float64` | Very large integers may be rounded. |
+| `GetBool(path...)` | `bool` | |
+| `GetNumber(path...)` | `*Number` | For `BigInt()`, `Raw()` and other exact access. |
+| `GetObject(path...)` | `*Object` | To read several values from one place. |
+| `GetArray(path...)` | `*Array` | To loop with `All()` or `Values()`. |
+
+```go
+hero, _ := root.GetObject("isekais", "1", "hero")
+first, _ := hero.GetString("first") // Rudeus
+last, _ := hero.GetString("last")   // Greyrat
+
+isekais, _ := root.GetArray("isekais")
+rank, _ := isekais.GetInt("2", "rank") // 3, on an array the first path element is an index
+```
+
+Errors say what went wrong and where, and work with `errors.Is`:
+
+```go
+_, err := root.GetString("count")
+// wrong JSON type: expected string, got number at ["count"]
+errors.Is(err, jsonvx.ErrWrongType) // true
+
+_, err = root.GetString("isekais", "0", "villain")
+// key not found: "villain" at ["isekais" "0" "villain"]
+errors.Is(err, jsonvx.ErrKeyNotFound) // true
+```
+
+Calling a getter on a nil `*Object` or `*Array`, for example after ignoring an error from `GetObject`, returns an error wrapping `ErrInvalidJSONType` instead of panicking.
+
 ## Query Path Syntax
 
-Access deeply nested fields in your parsed `JSON` `array` or `object` structure using the `QueryPath` method, which accepts a variadic list of strings to represent the path segments.
+A path is a list of strings, one per step: an object key, or an array index written as a string (`"0"`). Keys are used exactly as written, so a key with dots like `"best.of.all"` needs no escaping. The typed getters use these paths, and so does `QueryPath`, which returns the raw `jsonvx.JSON` node instead of a converted value.
 
-Using the `json` data above, we can query for specific values using the `QueryPath` method:
+Using the `json` data above, here is what each path points to:
 
 ```go
 // Get the title of the number one isekai
-strNode, _ := rootObj.QueryPath("isekais", "0", "title") // => "Re:Zero"
+strNode, _ := root.QueryPath("isekais", "0", "title") // => "Re:Zero"
 
 // Get the genres array
-arrayNode, _ := rootObj.QueryPath("genres") // => ["isekai", "fantasy", "comedy"]
+arrayNode, _ := root.QueryPath("genres") // => ["isekai", "fantasy", "comedy"]
 
 // Get the second genre
-strNode, _ = rootObj.QueryPath("genres", "1") // => "fantasy"
+strNode, _ = root.QueryPath("genres", "1") // => "fantasy"
 
 // Get the best of all (with dots in the key name)
-strNode, _ = rootObj.QueryPath("best.of.all") // => "Re:Zero"
+strNode, _ = root.QueryPath("best.of.all") // => "Re:Zero"
 
 // Get the second isekai
-objNode, _ := rootObj.QueryPath("isekais", "1") // => {"rank": 2, "title": "Mushoku Tensei", "hero": {"first": "Rudeus", "last": "Greyrat"}, "party": ["Roxy", "Sylphiette", "Eris"]}
+objNode, _ := root.QueryPath("isekais", "1") // => {"rank": 2, "title": "Mushoku Tensei", "hero": {"first": "Rudeus", "last": "Greyrat"}, "party": ["Roxy", "Sylphiette", "Eris"]}
 
 // Get the last name of the second isekai's hero
-strNode, _ = rootObj.QueryPath("isekais", "1", "hero", "last") // => "Greyrat"
+strNode, _ = root.QueryPath("isekais", "1", "hero", "last") // => "Greyrat"
 
 // Get the second party member of the third isekai
-strNode, _ = rootObj.QueryPath("isekais", "2", "party", "1") // => "Megumin"
+strNode, _ = root.QueryPath("isekais", "2", "party", "1") // => "Megumin"
 
 // Get the rank of the third isekai
-numNode, _ := rootObj.QueryPath("isekais", "2", "rank") // => 3
+numNode, _ := root.QueryPath("isekais", "2", "rank") // => 3
+```
+
+`QueryPath` is useful when you don't know a value's type ahead of time. To get a Go value out of a node, cast it with `AsString`, `AsNumber` and the other `As*` functions, then call `Value()`. This is the long form the typed getters replace:
+
+```go
+parser := jsonvx.NewParser(data, nil)
+node, err := parser.Parse()
+if err != nil {
+	panic(err)
+}
+root, _ := jsonvx.AsObject(node)
+
+countNode, _ := root.QueryPath("count")
+countNum, _ := jsonvx.AsNumber(countNode)
+count, _ := countNum.Int64() // 3, same as root.GetInt("count")
 ```
 
 ## Configuring The Parser
