@@ -2,6 +2,12 @@
 
 All notable changes to `jsonvx`. Versions follow [semantic versioning](https://semver.org).
 
+## v1.4.2 (2026-11-11)
+
+### Fixed
+- Error messages no longer repeat the rest of the input. When parsing stops at an invalid character, the message used to quote everything from there to the end of the input, which on a config file could be hundreds of lines. It now quotes the rest of that line, at most 30 characters, ending in `…` when shortened: `unexpected character in JSON input: "// cache settings…" at line 2, column 3`. The line and column, and the error values for `errors.Is`, are unchanged.
+- The same applies to `Number.Int64` errors for very long numbers.
+
 ## v1.4.1 (2026-11-10)
 
 Documentation only; no code changes.

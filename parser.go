@@ -3,6 +3,8 @@ package jsonvx
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -372,8 +374,44 @@ func (p *Parser) ignoreWhitespacesOrComments() {
 	}
 }
 
+// maxErrorSnippetRunes is the most characters of a token an error message quotes.
+const maxErrorSnippetRunes = 30
+
+// errorSnippet returns the start of a token's text for an error message: up to the
+// end of its first line and at most maxErrorSnippetRunes characters, ending in "…"
+// when shortened. The lexer stops at the first invalid character and puts the rest
+// of the input into one illegal token, so quoting the whole token could repeat most
+// of the file in a single message. The line and column still give the exact spot.
+func errorSnippet(literal []byte) string {
+	s := string(literal)
+	shortened := false
+
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		if i == 0 {
+			// The token starts with a line break: quote that character alone.
+			i = 1
+			if strings.HasPrefix(s, "\r\n") {
+				i = 2
+			}
+		}
+		shortened = i < len(s)
+		s = s[:i]
+	}
+
+	if utf8.RuneCountInString(s) > maxErrorSnippetRunes {
+		runes := []rune(s)
+		s = string(runes[:maxErrorSnippetRunes])
+		shortened = true
+	}
+
+	if shortened {
+		s += "…"
+	}
+	return s
+}
+
 func WrapUnexpectedCharError(baseErr error, token Token) error {
-	return fmt.Errorf("%w: %q at line %d, column %d", baseErr, token.Literal, token.Line, token.Column)
+	return fmt.Errorf("%w: %q at line %d, column %d", baseErr, errorSnippet(token.Literal), token.Line, token.Column)
 }
 func WrapJSONUnexpectedCharError(token Token) error {
 	return WrapUnexpectedCharError(ErrJSONUnexpectedChar, token)
@@ -386,7 +424,7 @@ func WrapJSONSyntaxError(token Token) error {
 func WrapJSONTooDeepError(token Token, maxDepth int) error {
 	return fmt.Errorf("%w: %q exceeds maximum depth of %d at line %d, column %d",
 		ErrJSONTooDeep,
-		token.Literal,
+		errorSnippet(token.Literal),
 		maxDepth,
 		token.Line,
 		token.Column,
@@ -396,7 +434,7 @@ func WrapJSONTooDeepError(token Token, maxDepth int) error {
 func WrapJSONMultipleContentError(token Token) error {
 	return fmt.Errorf("%w: extra value %q at line %d, column %d",
 		ErrJSONMultipleContent,
-		token.Literal,
+		errorSnippet(token.Literal),
 		token.Line,
 		token.Column,
 	)

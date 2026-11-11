@@ -26,7 +26,7 @@ func (n *Number) Int64() (int64, error) {
 	}
 
 	if !value.IsInt64() {
-		return 0, fmt.Errorf("%w: %s does not fit in int64", ErrNumberOutOfRange, n.Token.Literal)
+		return 0, fmt.Errorf("%w: %s does not fit in int64", ErrNumberOutOfRange, errorSnippet(n.Token.Literal))
 	}
 
 	return value.Int64(), nil
