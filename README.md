@@ -2,11 +2,45 @@
   <img src="assets/logo-wordmark.svg" alt="jsonvx logo" width="420">
 </p>
 
-# JSONVX
+<p align="center">
+  <b>JSON and JSON5 parsing for Go, strict by default.</b><br>
+  Turn on comments, trailing commas, hex numbers and more, one at a time. Errors point to the line and column.
+</p>
 
-`jsonvx` is a highly configurable `JSON` `parser` and `querier` for Go.
+<p align="center">
+  <a href="https://github.com/bube054/jsonvx/actions/workflows/ci.yml"><img src="https://github.com/bube054/jsonvx/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="jsontestsuite_test.go"><img src="https://img.shields.io/badge/JSONTestSuite-318%2F318%20passing-brightgreen" alt="JSONTestSuite: 318 of 318 cases passing"></a>
+  <a href="https://pkg.go.dev/github.com/bube054/jsonvx"><img src="https://pkg.go.dev/badge/github.com/bube054/jsonvx.svg" alt="Go Reference"></a>
+  <a href="https://github.com/bube054/jsonvx/releases"><img src="https://img.shields.io/github/v/release/bube054/jsonvx?label=version" alt="Latest version"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/github/go-mod/go-version/bube054/jsonvx" alt="Go version"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/github/license/bube054/jsonvx" alt="License"></a>
+</p>
 
-> **Formatting coming soon:** writing parsed data back out as valid `JSON` (compact or indented, including converting `JSON5` to standard `JSON`) is planned for an upcoming release.
+```go
+config := []byte(`{
+  // cache settings
+  "ttl": 300,
+  "hosts": ["a.example.com", "b.example.com"],
+}`)
+
+_, err := jsonvx.ParseObject(config, nil) // strict JSON by default
+fmt.Println(err) // unexpected character in JSON input: "// cache settings…" at line 2, column 3
+
+cfg := jsonvx.NewParserConfig(
+	jsonvx.WithAllowLineComments(true),
+	jsonvx.WithAllowTrailingCommaObject(true),
+)
+root, _ := jsonvx.ParseObject(config, cfg)
+ttl, _ := root.GetInt("ttl") // 300
+```
+
+```sh
+go get github.com/bube054/jsonvx
+```
+
+---
+
+## Features
 
 It supports both strict `JSON` (as defined by [ECMA-404](https://ecma-international.org/publications-and-standards/standards/ecma-404/)) and up to a more relaxed variant such as [JSON5](https://json5.org/). This makes it ideal for parsing user-generated data, configuration files, or legacy formats that don't fully comply with the JSON specification.
 
@@ -32,6 +66,26 @@ It also guards against hostile input with a [nesting depth limit](#maxdepth), on
 In its default strict mode, `jsonvx` passes every accept and reject case in [JSONTestSuite](https://github.com/nst/JSONTestSuite), the standard conformance suite for JSON parsers; the cases run as part of `go test`.
 
 `jsonvx` is designed for flexibility and correctness, not raw performance, making it a good fit for tools, linters, and config loaders where input may vary or include non-standard extensions.
+
+> **Formatting coming soon:** writing parsed data back out as valid `JSON` (compact or indented, including converting `JSON5` to standard `JSON`) is planned for an upcoming release.
+
+## Why jsonvx?
+
+How the same inputs fare in Go's standard library and two popular relaxed-JSON packages:
+
+| | **jsonvx** | [encoding/json](https://pkg.go.dev/encoding/json) | [tailscale/hujson](https://github.com/tailscale/hujson) | [yosuke-furukawa/json5](https://github.com/yosuke-furukawa/json5) |
+| --- | --- | --- | --- | --- |
+| **Comments, trailing commas** | each one a switch | no | yes | yes |
+| **Single quotes, hex, `NaN`, unquoted keys…** | each one a switch | no | no | no, rejects single quotes and hex |
+| **Strict mode** | the default, passes [JSONTestSuite](https://github.com/nst/JSONTestSuite) | always strict | no: always accepts comments | no: always relaxed |
+| **Error message gives** | line and column | no position | line and column | no position |
+| **Decodes into structs** | no: a tree with typed getters | yes | yes, through encoding/json | yes |
+
+**Choose encoding/json** for strict JSON into structs, especially in hot paths: it's faster. On a 0.5 MB document, jsonvx took about 2.6x as long as decoding into a struct; for typical config files the difference is negligible.
+
+**Choose hujson** if all you need is comments and trailing commas, decoded into structs.
+
+**Choose jsonvx** when you need more of JSON5 than that, want to decide exactly which extensions to accept, want a strict mode that's tested against JSONTestSuite, or want to read values by path without defining structs.
 
 ## Installing
 
